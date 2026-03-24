@@ -1,0 +1,253 @@
+# Config khung cho tách action từ video công đoạn.
+# Dùng với segment_actions.py
+#
+# Lưu ý:
+# - zones.static_* dùng tọa độ chuẩn hóa [0..1] theo frame (x, y).
+# - Bạn cần chỉnh polygon cho đúng layout camera thực tế.
+# - Với source/target là object class (tray, board, jig, liner), script dùng vùng của object detect được.
+#
+# Class names phải khớp data.yaml:
+# hand, tray, board, jig, liner, tweezers, shielding, PCIe cable, gasket
+
+version: 1
+
+global:
+  min_conf: 0.25
+  score_on: 0.66
+  score_off: 0.46
+  hold_frames_on: 4
+  hold_frames_off: 4
+  min_action_frames: 8
+  pre_buffer_frames: 10
+  post_buffer_frames: 10
+  smoothing_alpha: 0.35
+  sequential: true
+  # When an action started but never satisfied its end condition,
+  # close it at the start_frame of the next successfully detected action.
+  handoff_prev_end_to_next_start: true
+  # Do not insert "Idle" segments in timeline output; also trim clips to [start_frame, end_frame].
+  skip_idle: true
+  # Ghi debug/from_tray_<action_id>.json cho mỗi nhánh from_tray_pick_score_v1
+  from_tray_debug: true
+  # Khi action_id không có segment, chèn [end(prev)+1 .. start(next)-1] (chỉ khi đủ prev+next trên timeline)
+  neighbor_segment_fallback:
+    enabled: true
+    action_id: shielding_from_tray
+    prev_action_id: pcie_from_tray_to_board
+    next_action_id: board_back_to_conveyor
+
+# Vùng tĩnh (placeholder) - cần chỉnh theo camera của bạn
+zones:
+  static_conveyor_in:
+    # ví dụ vùng đưa board từ chuyền vào (bên trái)
+    polygon_norm:
+      - [0.00, 0.10]
+      - [0.30, 0.10]
+      - [0.30, 0.95]
+      - [0.00, 0.95]
+  static_conveyor_out:
+    # ví dụ vùng đặt board trả về chuyền (bên phải)
+    polygon_norm:
+      - [0.70, 0.10]
+      - [1.00, 0.10]
+      - [1.00, 0.95]
+      - [0.70, 0.95]
+
+actions:
+  - id: board_to_jig
+    description: "Lấy board từ chuyền đặt vào jig"
+    mode: board_to_jig_v1
+    object_class: "board"
+    board_conf_min: 0.60
+    jig_conf_min: 0.70
+    contain_end_thr: 0.90
+    end_hold_frames: 60
+    grace_miss_frames: 2
+    score_on: 0.74
+    score_off: 0.52
+    hold_frames_on: 5
+    hold_frames_off: 5
+    max_action_frames: 140
+    source:
+      type: static_zone
+      zone_name: static_conveyor_in
+    target:
+      type: object_class
+      class_name: "jig"
+    manipulation:
+      require_hand_contact: true
+      require_tool_contact: false
+      release_after_target: true
+    weights:
+      space: 0.45
+      time: 0.30
+      manipulation: 0.25
+
+  - id: pcie_from_tray_to_board
+    description: "Lấy PCIe cable từ tray gắn vào board"
+    mode: from_tray_pick_score_v1
+    # shared from_tray definition
+    hand_tray_iou_min: 0.003
+    leave_tray_iou_max: 0.02
+    hand_tray_hold_frames: 1
+    leave_hold_frames: 1
+    # confirm/held item
+    confirm_item_classes: ["PCIe cable"]
+    confirm_hand_iou_min: 0.02
+    confirm_hold_frames: 1
+    confirm_miss_grace: 12
+    negative_item_classes: []
+    # end item (release + place)
+    end_item_classes: ["PCIe cable"]
+    end_item_conf_min: 0.40
+    end_release_hand_iou_max: 0.02
+    end_target_cover_thr: 0.25
+    # Hồ sơ bền vững cho góc khuất tay: release động + timeout.
+    dynamic_release: true
+    release_floor_ratio: 0.2
+    release_ratio: 0.3
+    use_release_fallback: true
+    end_mode: tray_return_then_release_fallback
+    # Tăng hold để tránh end sớm do tay lướt qua tray.
+    end_primary_hold_frames: 45
+    end_primary_timeout_frames: 120
+    end_require_hand_in_tray: true
+    end_hand_in_tray_iou_min: 0.02
+    end_exclude_start_tray: true
+    end_exclude_start_tray_iou_thr: 0.3
+    end_hold_mode: timeout
+
+    object_class: "PCIe cable"
+    tray_class: "tray"
+    target_class: "board"
+    hand_class: "hand"
+    hand_conf_min: 0.60
+    pcie_conf_min: 0.45
+    tray_conf_min: 0.70
+    board_conf_min: 0.70
+    end_hold_frames: 14
+    # Tránh break sớm do mất detect PCIe ngắn hạn; để max_action_frames làm chặn trên.
+    end_miss_grace: 240
+    grace_miss_frames: 3
+    score_on: 0.70
+    score_off: 0.50
+    hold_frames_on: 4
+    hold_frames_off: 5
+    # Chặn trên để không nuốt sang action 3 khi end detector bị mù.
+    max_action_frames: 220
+    source:
+      type: object_class
+      class_name: "tray"
+    target:
+      type: object_class
+      class_name: "board"
+    manipulation:
+      require_hand_contact: true
+      require_tool_contact: false
+      release_after_target: true
+    weights:
+      space: 0.50
+      time: 0.25
+      manipulation: 0.25
+
+  - id: shielding_from_tray
+    description: "Lấy shielding từ tray và gắn vào board (gộp với gasket)"
+    mode: from_tray_pick_score_v1
+    # shared from_tray definition
+    hand_tray_iou_min: 0.003
+    leave_tray_iou_max: 0.02
+    hand_tray_hold_frames: 1
+    leave_hold_frames: 1
+    # confirm/held item (shielding is required; gasket just appears alongside)
+    confirm_item_classes: ["shielding"]
+    confirm_hand_iou_min: 0.008
+    confirm_hold_frames: 1
+    confirm_miss_grace: 12
+    negative_item_classes: ["PCIe cable"]
+    negative_max_hand_iou: 0.08
+    # end item (mount onto board)
+    end_item_classes: ["shielding"]
+    end_item_conf_min: 0.45
+    end_release_hand_iou_max: 0.012
+    end_target_cover_thr: 0.10
+    end_target_check_mode: hybrid
+    dynamic_release: true
+    release_floor_ratio: 0.2
+    release_ratio: 0.25
+    end_mode: tray_return_then_release_fallback
+    end_primary_hold_frames: 15
+    end_primary_timeout_frames: 180
+    end_require_hand_in_tray: true
+    end_hand_in_tray_iou_min: 0.02
+    end_exclude_start_tray: true
+    end_exclude_start_tray_iou_thr: 0.3
+    end_hold_mode: timeout
+
+    object_class: "shielding"
+    tray_class: "tray"
+    target_class: "board"
+    hand_class: "hand"
+    tray_conf_min: 0.70
+    hand_conf_min: 0.60
+    shielding_conf_min: 0.45
+    board_conf_min: 0.70
+    grace_miss_frames: 10
+    end_hold_frames: 10
+    max_action_frames: 800
+    source:
+      type: object_class
+      class_name: "tray"
+    target:
+      type: object_class
+      class_name: "board"
+
+  - id: shielding_to_board
+    description: "Gắn shielding vào board"
+    object_class: "shielding"
+    score_on: 0.72
+    score_off: 0.52
+    hold_frames_on: 4
+    hold_frames_off: 5
+    max_action_frames: 140
+    source:
+      type: object_class
+      class_name: "tray"
+    target:
+      type: object_class
+      class_name: "board"
+    manipulation:
+      require_hand_contact: true
+      require_tool_contact: false
+      release_after_target: true
+    weights:
+      space: 0.50
+      time: 0.25
+      manipulation: 0.25
+
+  - id: board_back_to_conveyor
+    description: "Lấy board đặt lại chuyền"
+    mode: board_absent_end_v1
+    object_class: "board"
+    board_conf_min: 0.60
+    grace_miss_frames: 10
+    # Action này có thể bắt đầu ngay từ frame sau action 3 (không chờ board xuất hiện lại)
+    start_on_prev_end: true
+    score_on: 0.72
+    score_off: 0.52
+    hold_frames_on: 4
+    hold_frames_off: 5
+    max_action_frames: 140
+    source:
+      type: object_class
+      class_name: "jig"
+    target:
+      type: static_zone
+      zone_name: static_conveyor_out
+    manipulation:
+      require_hand_contact: true
+      require_tool_contact: false
+      release_after_target: true
+    weights:
+      space: 0.45
+      time: 0.30
+      manipulation: 0.25

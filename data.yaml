@@ -1,0 +1,16 @@
+train: datasets/yolo_format/images/train
+val: datasets/yolo_format/images/val
+
+nc: 9
+
+names: [
+  'hand',
+  'tray',
+  'board',
+  'jig',
+  'liner',
+  'tweezers',
+  'shielding',
+  'PCIe cable',
+  'gasket'
+]

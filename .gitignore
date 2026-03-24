@@ -1,0 +1,66 @@
+# ==============================================================
+# YOLO & Computer Vision Project .gitignore
+# ==============================================================
+
+# 1. Môi trường Python (Virtual Environment & Caches)
+venv/
+env/
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.coverage
+htmlcov/
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# 2. Dữ liệu nặng (Datasets, Videos, Images)
+# KHÔNG BAO GIỜ đẩy video mp4/avi, ảnh thô (jpg, png) hay file jsonl khổng lồ lên Git
+datasets/
+data/
+*.mp4
+*.avi
+*.mkv
+*.mov
+*.jsonl
+roi_debug_frames/
+SOP_Cycle_Time_Report.csv
+
+# 3. Model Weights (Trọng số từ YOLO/AI - Cực kỳ lớn, nên nén đưa lên Drive/S3)
+*.pt
+*.pth
+*.onnx
+*.engine
+*.tflite
+weights/
+models/
+
+# 4. Thư mục chạy huấn luyện (Training & Inference Outputs)
+# YOLOv8 tự động sinh ra thư mục runs/ chứa log, biểu đồ, weights... Không nên push lên Git
+runs/
+actions/
+clips/
+debug/
+
+# 5. Các file Jupyter Notebook checkpoints (nếu bạn có xài)
+.ipynb_checkpoints
+
+# 6. Môi trường Editor & Hệ thống điều hành (IDE/OS)
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

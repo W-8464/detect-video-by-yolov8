@@ -1,0 +1,20 @@
+[1. CAMERA THỰC TẾ] 
+       │ (Quay video thao tác tại chuyền, top-down)
+       ▼
+[2. XỬ LÝ DỮ LIỆU] ─── Cắt Frame tĩnh ───► [GẮN NHÃN (CVAT/Roboflow)]
+       │                                      (Khoanh vùng: Tay, Linh kiện...)
+       ▼                                                │
+[3. HUẤN LUYỆN AI] ◄── data.yaml & Tọa độ ──────────────┘
+       │ (Dùng Ultralytics YOLOv8)
+       ▼
+[4. AI ENGINE (PYTHON)] 
+       │ (Chạy model `best.pt` real-time)
+       │ (Tính toán logic: Sai quy trình, Bỏ bước SOP, Phát hiện bất thường)
+       ▼
+[5. KAFKA BROKER] 
+       │ (Đẩy data cảnh báo & trạng thái liên tục, độ trễ cực thấp)
+       ├────────────────────────────────────────┐
+       ▼                                        ▼
+[6. TRẠM VẬN HÀNH (C#)]                 [7. DASHBOARD GIÁM SÁT (ANGULAR)]
+ (App C# chạy ngầm, auto-update)         (Web UI cho Test Engineer)
+ (Khóa máy/Báo còi khi có lỗi)           (Vẽ biểu đồ, đề xuất SOP khắc phục)

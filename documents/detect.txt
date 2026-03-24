@@ -1,0 +1,17 @@
+Action 1: Lấy bản mạch từ truyền
+	Start: Bắt đầu xuất hiện class "board"
+	End: "board" nằm trọn trong "jig" đủ 30 frames (1s)
+	
+Action 2 và 3: Áp dụng công thức chung cho thao tác lấy kiện từ khay:
+	Start: Tâm của "hand" bên trong "tray" đủ 15 frames.
+	End: Tâm của "hand" bên trong "tray" khác đủ 15 frames. Nếu không bắt được end_frame với điều kiện này thì mới áp dụng điều kiện 2: Kiện "PCIe cable"/"shielding" nằm 1 phần hoặc cả trong "board" + "hand" không còn giao với class của "PCIe cable"/"shielding" nữa.
+Note1: Xét riêng với các thao tác lấy kiện từ khay này, sẽ cần check xem đây có chính xác là thao tác lấy kiện không hay chỉ là đưa tay qua lại với 3 điều kiện sau và dựa theo phương pháp Score-based:
+	1. "hand" giao với "tray" đủ sâu
+	2. "hand" nằm trong "tray" đủ lâu
+	3. sau khi "hand" rời "tray" phải mang theo kiện "PCIe cable"/"shielding" (có thể không phải là frame ngay khi "hand" rời "tray", vì đây là các class nhỏ nên loss tương đối cao, chỉ cần xét từ frame "hand" rời "tray", có bất kỳ 1 frame nào mà "hand" có giao với class của kiện và di chuyển theo "hand" là được)
+
+Action 4: Trả bản mạch lại truyền
+	Start: "board" bắt đầu chớm ra ngoài "jig"
+	End: "board" không còn nữa.
+	
+Note2: Nếu action không bắt được start_frame thì có thể tính luôn từ end_frame của action trước +1. Nếu action không bắt được end_frame thì tính luôn từ start_frame của action sau -1.

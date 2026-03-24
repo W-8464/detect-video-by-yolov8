@@ -1,0 +1,55 @@
+KỊCH BẢN THUYẾT TRÌNH: GIẢI MÃ LOGIC BÓC TÁCH VIDEO THAO TÁC (segment_actions.py)
+
+Kính chào mọi người, hôm nay tôi sẽ trình bày về "Trái tim" của hệ thống phân tích thao tác lắp ráp: file segment_actions.py. Đây là nơi phép màu thực sự diễn ra, biến những con số khô khan từ AI thành các video đoạn thao tác (action clips) chuẩn xác.
+
+Bài thuyết trình của chúng ta sẽ đi qua 4 phần chính:
+1. Đầu vào & Đầu ra (Input & Output)
+2. Công cụ Toán học Hình học (Geometric Tools)
+3. Máy Trạng Thái Bóc Tách (State Machine & Action Modes)
+4. Cơ chế Bù Trừ Nhiễu (Smoothing & Robustness)
+
+---
+PHẦN 1: BỨC TRANH TỔNG THỂ (INPUT & OUTPUT)
+Thưa các bạn, hệ thống AI Computer Vision của chúng ta làm rất tốt việc phát hiện (detect) vật thể trong từng khung hình. Nhưng để hiểu được "1 hành động dài 5 giây" thì chúng ta cần một công cụ xâu chuỗi thời gian. 
+- Đầu vào của segment_actions là 3 thành phần:
+  1. Video gốc của toàn bộ quá trình.
+  2. File cấu hình actions_config.yaml (luật chơi định nghĩa thế nào là 1 action).
+  3. File detections.jsonl (kết quả Box tọa độ từ YOLO cho từng frame).
+- Đầu ra của script là: Một thư mục chứa các video clip MP4 cắt ngắn đúng khoảng thời gian xảy ra hành động, kèm theo file Báo cáo timeline.csv và timeline.json.
+
+---
+PHẦN 2: CÁC PHÉP ĐO LƯỜNG HÌNH HỌC (THE GEOMETRY ENGINE)
+Để AI biết khi nào "tay đang cầm đồ" hay "tay đang lắp đồ", code không dùng học máy phức tạp ở bước này mà dùng Toán Hình Học tinh xảo. Các hàm chính bao gồm:
+- iou_aabb (Intersection Over Union): Tính tỷ lệ diện tích giao nhau giữa Bàn tay và Vật thể. Nếu IoU lớn, chứng tỏ tay đang cầm vật.
+- contain_ratio_aabb: Tính xem vật (như bo mạch) có nằm trọn bên trong mục tiêu (như Jig - khuôn) hay không.
+- center_in_aabb: Xét tâm của bàn tay có đang lọt vào vùng Khay chứa (tray) hay không. Đây là dấu hiệu bắt đầu lấy kiện.
+
+---
+PHẦN 3: MÁY TRẠNG THÁI VÀ CÁC CHẾ ĐỘ THAO TÁC (STATE MACHINE)
+Trọng tâm của script là thuật toán duyệt qua từng frame thời gian thực theo Cơ chế Chuyển Trạng Thái (State Machine). Chúng ta có nhiều Mode ứng với từng loại hành vi:
+
+▶ Mode 1: Tính Điểm Rời (Score-based)
+Dành cho các động tác chung. Code vắt kiệt 3 loại rò xét:
+- Điểm Không gian (Space): Vật có di chuyển từ Nguồn sang Đích không?
+- Điểm Cầm nắm (Manipulation): Tay (hand) hoặc nhíp (tweezers) có đang chạm vào vật không?
+- Điểm Thời gian (Time): Dùng một biến số EMA để mượt hóa theo thời gian.
+Khi Tổng Điểm vượt mức "score_on" (ví dụ 70%) trong vài frame liên tiếp => Tuyên bố BẮT ĐẦU hành động. Khi điểm rớt xuống "score_off" => KẾT THÚC.
+
+▶ Mode 2: Lấy hàng từ khay (from_tray_pick_score_v1)
+Chuyên dùng cho các linh kiện như PCIe, Shielding. Quy trình rất khắt khe gồm 3 Phase:
+- Phase 0 (Bắt đầu): Dò xem Tâm bàn tay có lọt vào Khuôn/Khay chứa hay không. Đủ số frame quy định -> Chuyển bước.
+- Phase 1 (Xác nhận cầm): Tay rời khỏi khay, code bắt đầu đo IoU giữa tay và vật linh kiện. Nếu dính chặt > Xác nhận đã bốc đồ.
+- Phase 2 (Hoàn thành): Tay đưa đồ tới vị trí bo mạch (vùng đích). Khi khoảng cách giao nhau giữa tay và vật nhỏ lại (nghĩa là thả tay ra) VÀ vật nằm trên bo mạch -> Đóng gói Clip hoàn tất.
+
+---
+PHẦN 4: VŨ KHÍ BẢO VỆ CHỐNG NHIỄU (ROBUSTNESS MECHANISMS)
+Thực tế trong nhà máy, AI đôi lúc sẽ bị mù do ánh sáng, góc khuất cam hoặc tay vuốt qua quá nhanh. Code xử lý việc này thông qua:
+1. "Grace Miss Frames" (Số frame nhân nhượng): Nếu tay bất ngờ biến mất trong 2-3 frame, action không bị đứt gãy sập nguồn, nó kiên nhẫn đợi xuất hiện lại.
+2. "Dynamic Release" (Thả vật động): Tùy thuộc vào việc tay cầm vật thể chắc đến đâu (IoU max), lúc thả ra code sẽ linh hoạt chọn một ngưỡng cắt phù hợp. Tránh việc nhả đồ quá nhạy.
+3. Handoff & Fallback (Chạy tiếp sức): Nếu người nhân viên làm quá nhanh, hành động số 1 chưa kịp phân tích xong bước nhả đồ mà tay đã vươn sang làm hành động số 2 -> Code sẽ tự động LẤP ĐẦY và kết thúc hành động 1 ngay tại mốc bắt đầu hành động 2 (Handoff prev_end to next_start). Không có giây video nào trôi qua bị bỏ lỡ lãng phí!
+
+========================================
+TỔNG KẾT:
+segment_actions.py không chỉ là file cắt video tĩnh, mà là một não bộ "Hiểu Ngữ Cảnh" (Contextual Understanding). Bằng cách kết hợp Dữ liệu Tracking AI + Máy trạng thái logic + Kỹ thuật bù nhiễu thời gian, chúng ta đã tự động hoá được việc giám sát từng chu kỳ và công đoạn chuẩn xác trong quy trình công nghiệp.
+
+Xin cảm ơn các bạn đã lắng nghe!
