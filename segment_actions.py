@@ -8,6 +8,9 @@ from typing import Dict, List, Optional, Tuple
 import cv2
 import numpy as np
 
+MAKE_CLIPS = False
+RENDER_TIMER_VIDEO = False
+
 try:
     import yaml
 except ImportError as exc:
@@ -258,6 +261,10 @@ def action_score(
 
 
 def cut_clip(video_path: Path, out_path: Path, start_frame: int, end_frame: int) -> None:
+    global MAKE_CLIPS
+    if not MAKE_CLIPS:
+        # When clips are disabled, avoid writing any mp4 files.
+        return
     cap = cv2.VideoCapture(str(video_path))
     if not cap.isOpened():
         return
@@ -274,6 +281,149 @@ def cut_clip(video_path: Path, out_path: Path, start_frame: int, end_frame: int)
             break
         writer.write(frame)
         cur += 1
+    writer.release()
+    cap.release()
+
+
+def render_video_with_timer_overlay(
+    video_path: Path,
+    out_path: Path,
+    fps: float,
+    timeline_rows: List[dict],
+) -> None:
+    """Render full video (no slicing) with an on-screen timer table overlay.
+
+    Requirements:
+    - Show `action_id` + elapsed seconds while that action is active.
+    - When an action ends, freeze its elapsed time.
+    - Next action appears on the next line and starts its own timer.
+    - Gaps not covered by any action show `idle` and do NOT show a timer.
+    """
+    if fps <= 0:
+        fps = 30.0
+
+    cap = cv2.VideoCapture(str(video_path))
+    if not cap.isOpened():
+        return
+
+    w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+    h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    fps_in = float(cap.get(cv2.CAP_PROP_FPS) or fps)
+    if fps_in <= 0:
+        fps_in = fps
+    total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT) or 0)
+
+    fourcc = cv2.VideoWriter_fourcc(*"mp4v")
+    writer = cv2.VideoWriter(str(out_path), fourcc, fps_in, (w, h))
+    if not writer.isOpened():
+        cap.release()
+        return
+
+    # Build action segments from timeline and fill gaps with "idle".
+    action_segs: List[Tuple[int, int, str]] = []
+    for r in timeline_rows:
+        act_id = str(r.get("action_id", ""))
+        if not act_id or act_id == "Idle":
+            continue
+        if r.get("start_frame", None) is None or r.get("end_frame", None) is None:
+            continue
+        s = int(r.get("start_frame", -1))
+        e = int(r.get("end_frame", -1))
+        if s < 0 or e < s:
+            continue
+        action_segs.append((s, e, act_id))
+    action_segs.sort(key=lambda x: x[0])
+
+    segments: List[Tuple[int, int, str]] = []
+    cursor = 0
+    for s, e, act_id in action_segs:
+        if s > cursor:
+            segments.append((cursor, s - 1, "idle"))
+        segments.append((s, e, act_id))
+        cursor = e + 1
+    if total_frames > 0 and cursor < total_frames:
+        segments.append((cursor, total_frames - 1, "idle"))
+
+    seg_idx = 0
+    frame_idx = 0
+
+    # Keep last N rows for readability; newest rows appear at the bottom.
+    rows: List[dict] = []
+    max_rows = 10
+
+    # Overlay layout
+    x0, y0 = 10, 10
+    line_h = 22
+    pad = 8
+    font = cv2.FONT_HERSHEY_SIMPLEX
+    font_scale = 0.55
+    font_th = 1
+
+    while True:
+        ok, frame = cap.read()
+        if not ok:
+            break
+
+        # Resolve current segment for this frame.
+        while seg_idx < len(segments) and frame_idx > segments[seg_idx][1]:
+            seg_idx += 1
+        cur = segments[seg_idx] if seg_idx < len(segments) else (frame_idx, frame_idx, "idle")
+        cur_s, cur_e, cur_id = int(cur[0]), int(cur[1]), str(cur[2])
+
+        # Start a new display row when entering a new segment id.
+        last_id = str(rows[-1]["action_id"]) if rows else ""
+        if not rows or last_id != cur_id:
+            # Freeze previous row if it was an action.
+            if rows and rows[-1]["action_id"] != "idle":
+                prev = rows[-1]
+                prev_end = int(prev["end_frame"])
+                prev["frozen_seconds"] = (prev_end - int(prev["start_frame"]) + 1) / fps_in
+
+            rows.append(
+                {
+                    "action_id": cur_id,
+                    "start_frame": cur_s,
+                    "end_frame": cur_e,
+                    "frozen_seconds": None,
+                }
+            )
+            if len(rows) > max_rows:
+                rows = rows[-max_rows:]
+
+        # Keep end_frame synced (mostly stable).
+        rows[-1]["end_frame"] = cur_e
+
+        # Build text lines.
+        lines: List[str] = []
+        for r in rows:
+            aid = str(r["action_id"])
+            if aid == "idle":
+                lines.append("idle")
+                continue
+            frozen = r.get("frozen_seconds")
+            if frozen is None:
+                elapsed = (frame_idx - int(r["start_frame"]) + 1) / fps_in
+            else:
+                elapsed = float(frozen)
+            lines.append(f"{aid}  {elapsed:.2f}s")
+
+        # Background box sized to content.
+        box_w = 0
+        for txt in lines:
+            (tw, _), _ = cv2.getTextSize(txt, font, font_scale, font_th)
+            box_w = max(box_w, tw)
+        box_w = min(w - 20, box_w + 2 * pad)
+        box_h = min(h - 20, len(lines) * line_h + 2 * pad)
+        cv2.rectangle(frame, (x0, y0), (x0 + box_w, y0 + box_h), (0, 0, 0), thickness=-1)
+
+        y = y0 + pad + 16
+        for txt in lines:
+            cv2.putText(frame, txt, (x0 + pad, y), font, font_scale, (255, 255, 255), font_th, cv2.LINE_AA)
+            y += line_h
+
+        writer.write(frame)
+        frame_idx += 1
+
     writer.release()
     cap.release()
 
@@ -319,7 +469,7 @@ def apply_neighbor_segment_fallback(
     post_b = int(neighbor_fb_cfg.get("post_buffer_frames", global_post_b))
     clip_start = max(0, s - pre_b)
     clip_end = e + post_b
-    clip_name = f"{order:02d}_{target_id}_{clip_start}_{clip_end}.mp4"
+    clip_name = f"{order:02d}_{target_id}.mp4"
     cut_clip(video_path, clips_dir / clip_name, clip_start, clip_end)
     timeline_rows.append(
         {
@@ -337,13 +487,92 @@ def apply_neighbor_segment_fallback(
     )
 
 
+def compute_heuristic_reliability_0_100(
+    row: dict,
+    dbg: Optional[dict],
+    act_mode: str,
+) -> float:
+    """Heuristic 0–100 'tin cậy nội bộ' — không phải độ chính xác so ground truth.
+
+    Kết hợp outcome / end_reason / neighbor-fallback / mode / best_score và optional debug from-tray.
+    """
+    act_id = str(row.get("action_id", ""))
+    if act_id == "Idle":
+        return 0.0
+
+    outcome = str(row.get("outcome", ""))
+    end_reason = str(row.get("end_reason", ""))
+    seg_source = str(row.get("segment_source", ""))
+    try:
+        bs = float(row.get("best_score", 0) or 0)
+    except (TypeError, ValueError):
+        bs = 0.0
+
+    s = 50.0
+
+    if outcome == "completed":
+        s += 24.0
+    elif outcome == "pending_handoff":
+        s -= 14.0
+    elif outcome == "fallback_segment":
+        s -= 20.0
+
+    if seg_source == "neighbor_fallback":
+        s -= 10.0
+
+    if end_reason == "handoff_prev_end_to_next_start":
+        s -= 18.0
+    elif end_reason == "tray_return_streak_met":
+        s += 12.0
+    elif end_reason in ("release_consecutive_met", "release_timer_met"):
+        s += 6.0
+    elif "max_action_frames_cap" in end_reason:
+        s -= 12.0
+    elif "scan_exhausted" in end_reason or end_reason in ("phase2_no_end", "end_item_lost_after_grace"):
+        s -= 12.0
+    elif end_reason.endswith(":end") and "handoff" not in end_reason:
+        s += 8.0
+
+    if act_mode == "board_to_jig_v1":
+        s += 16.0 * min(1.0, max(0.0, bs))
+    elif act_mode == "board_absent_end_v1":
+        s += 12.0 * min(1.0, max(0.0, bs))
+    elif act_mode == "from_tray_pick_score_v1":
+        s += min(8.0, max(0.0, bs) * 45.0)
+
+    if dbg:
+        pf = dbg.get("primary_failure")
+        if pf and outcome != "completed":
+            s -= 5.0
+        pr = str(dbg.get("phase2_break_reason") or "")
+        if pr == "end_item_lost_after_grace":
+            s -= 10.0
+
+    return float(max(0.0, min(100.0, round(s, 2))))
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(description="Score-based action segmentation from detections + config.")
     ap.add_argument("--video", required=True, help="Input video path.")
     ap.add_argument("--detections", required=True, help="Detections jsonl path.")
     ap.add_argument("--config", default="actions_config.yaml", help="Action config yaml path.")
     ap.add_argument("--out-dir", default="runs/actions", help="Output directory.")
+    ap.add_argument(
+        "--make-clips",
+        action="store_true",
+        help="If set, cut and write clips (mp4) for each action; otherwise skip video slicing.",
+    )
+    ap.add_argument(
+        "--render-timer-video",
+        action="store_true",
+        help="If set, render a full-length mp4 with an elapsed-time overlay (no slicing).",
+    )
     args = ap.parse_args()
+
+    global MAKE_CLIPS
+    MAKE_CLIPS = bool(getattr(args, "make_clips", False))
+    global RENDER_TIMER_VIDEO
+    RENDER_TIMER_VIDEO = bool(getattr(args, "render_timer_video", False))
 
     video_path = Path(args.video).resolve()
     det_path = Path(args.detections).resolve()
@@ -351,7 +580,8 @@ def main() -> None:
     out_dir = Path(args.out_dir).resolve()
     out_dir.mkdir(parents=True, exist_ok=True)
     clips_dir = out_dir / "clips"
-    clips_dir.mkdir(parents=True, exist_ok=True)
+    if MAKE_CLIPS:
+        clips_dir.mkdir(parents=True, exist_ok=True)
 
     cfg = read_config(cfg_path)
     g = cfg.get("global", {})
@@ -375,7 +605,11 @@ def main() -> None:
         raise SystemExit(f"Cannot open video: {video_path}")
     w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
     h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    fps = float(cap.get(cv2.CAP_PROP_FPS) or 0.0)
     cap.release()
+    if fps <= 0:
+        # Safety fallback: some containers may not expose FPS properly.
+        fps = 30.0
 
     static_zones: Dict[str, np.ndarray] = {}
     for name, z in cfg.get("zones", {}).items():
@@ -420,7 +654,7 @@ def main() -> None:
                 continue
             clip_start = max(0, s - int(pa["pre_b"]))
             clip_end = end_frame + int(pa["post_b"])
-            clip_name = f"{int(pa['a_idx'])+1:02d}_{pa['act_id']}_{clip_start}_{clip_end}.mp4"
+            clip_name = f"{int(pa['a_idx'])+1:02d}_{pa['act_id']}.mp4"
             cut_clip(video_path, clips_dir / clip_name, clip_start, clip_end)
             timeline_rows.append(
                 {
@@ -542,7 +776,7 @@ def main() -> None:
 
                 clip_start = max(0, start_frame - pre_b)
                 clip_end = end_frame + post_b
-                clip_name = f"{a_idx+1:02d}_{act_id}_{clip_start}_{clip_end}.mp4"
+                clip_name = f"{a_idx+1:02d}_{act_id}.mp4"
                 cut_clip(video_path, clips_dir / clip_name, clip_start, clip_end)
                 timeline_rows.append(
                     {
@@ -644,6 +878,68 @@ def main() -> None:
             alpha_local = float(action.get("smoothing_alpha", alpha))
             commit_requires_score = bool(action.get("commit_requires_score", False))
 
+            # gasket_on_shielding_v1 end mode params
+            gasket_cls = str(action.get("gasket_class", "gasket"))
+            tweezers_cls = str(action.get("tweezers_class", "tweezers"))
+            gasket_shield_iou_min = float(action.get("gasket_shield_iou_min", 0.10))
+            gasket_tweezers_iou_max = float(action.get("gasket_tweezers_iou_max", 0.02))
+            gasket_end_hold = int(action.get("gasket_end_hold_frames", 5))
+            gasket_min_frames_before_end = int(action.get("gasket_min_frames_before_end", 0))
+            gasket_conf_min = float(action.get("gasket_conf_min", 0.25))
+            tweezers_conf_min = float(action.get("tweezers_conf_min", 0.25))
+
+            # skip_tray_pick: skip Phase 0/1, start directly at Phase 2
+            skip_tray_pick = bool(action.get("skip_tray_pick", False))
+            start_from_prev_action_end = bool(action.get("start_from_prev_action_end", False))
+            start_from_prev_action_id = str(action.get("start_from_prev_action_id", "")).strip()
+            start_from_prev_end_reasons = set(
+                str(x) for x in (action.get("start_from_prev_end_reasons", []) or [])
+            )
+
+            # Optional strict chaining:
+            # this action can start only at (end of previous linked action + 1),
+            # and only when previous action completed with allowed end_reason(s).
+            if start_from_prev_action_end:
+                prev_row = None
+                for r in reversed(timeline_rows):
+                    if start_from_prev_action_id and str(r.get("action_id", "")) != start_from_prev_action_id:
+                        continue
+                    if str(r.get("_runtime_outcome", "")) != "completed":
+                        continue
+                    prev_row = r
+                    break
+                prev_ok = False
+                if prev_row is not None and prev_row.get("end_frame") is not None:
+                    prev_end_reason = str(prev_row.get("_runtime_end_reason", ""))
+                    reason_ok = (not start_from_prev_end_reasons) or (prev_end_reason in start_from_prev_end_reasons)
+                    prev_ok = reason_ok
+                if not prev_ok:
+                    # strict chaining requested but prerequisite not satisfied:
+                    # do not let this action start independently.
+                    if from_tray_debug:
+                        dbg_dir = out_dir / "debug"
+                        dbg_dir.mkdir(parents=True, exist_ok=True)
+                        dbg_payload = {
+                            "action_id": act_id,
+                            "mode": "from_tray_pick_score_v1",
+                            "outcome": "blocked",
+                            "primary_failure": "start_link_not_satisfied",
+                            "completed_segment": False,
+                            "start_frame": None,
+                            "end_frame": None,
+                            "candidate_start_frame": None,
+                            "final_phase": 0,
+                            "phase2_break_reason": None,
+                            "linked_prev_action_id": start_from_prev_action_id,
+                            "allowed_prev_end_reasons": sorted(start_from_prev_end_reasons),
+                        }
+                        (dbg_dir / f"from_tray_{act_id}.json").write_text(
+                            json.dumps(dbg_payload, ensure_ascii=False, indent=2), encoding="utf-8"
+                        )
+                    continue
+                scan_start_frame = int(prev_row["end_frame"]) + 1
+                skip_tray_pick = True
+
             ema_start = 0.0
             ema_confirm = 0.0
             ema_end = 0.0
@@ -685,8 +981,17 @@ def main() -> None:
             cross_tray_miss = 0
             cross_tray_gate_ok = not need_cross_tray_gate
 
+            # skip_tray_pick: jump directly to Phase 2 (no tray pick needed)
+            if skip_tray_pick:
+                phase = 2
+                candidate_start_frame = int(scan_start_frame)
+                cross_tray_gate_ok = True
+                need_cross_tray_gate = False
+                phase2_start_frame = int(scan_start_frame)
+
+            candidate_frames_local = [f for f in candidate_frames if f >= int(scan_start_frame)]
             # Track candidate start per frame, but only commit after confirm.
-            for f in candidate_frames:
+            for f in candidate_frames_local:
                 last_scan_frame = f
                 dets = by_frame.get(f, [])
 
@@ -755,9 +1060,31 @@ def main() -> None:
                             # pick highest conf among same track
                             cand.sort(key=lambda d: d.conf, reverse=True)
                             active_hand = cand[0]
+                    if active_hand is None and phase in (0, 1):
+                        # During tray-pick phases, choose the hand that best matches
+                        # a tray interaction instead of the highest-confidence hand.
+                        best_hand = None
+                        best_iou = -1.0
+                        for h in hands:
+                            h_box = aabb(h.poly)
+                            _tray, iou_v = best_single_tray_for_hand(
+                                h,
+                                h_box,
+                                trays,
+                                hand_tray_iou_min,
+                            )
+                            if _tray is not None and iou_v > best_iou:
+                                best_hand = h
+                                best_iou = iou_v
+                        if best_hand is not None:
+                            active_hand = best_hand
                     if active_hand is None:
-                        hands.sort(key=lambda d: d.conf, reverse=True)
-                        active_hand = hands[0]
+                        # Fallback (no locked track, no tray-match hand):
+                        # choose hand most related to target context.
+                        active_hand = max(
+                            hands,
+                            key=lambda h: iou_aabb(aabb(h.poly), target_box),
+                        )
                     hand_box = aabb(active_hand.poly)
                 elif phase in (0, 1):
                     continue
@@ -911,6 +1238,57 @@ def main() -> None:
 
                 # Phase 2: active mounting/end
                 if phase == 2:
+                    # --- gasket_on_shielding_v1: end when gasket is on shielding and off tweezers ---
+                    if end_mode == "gasket_on_shielding_v1":
+                        gasket_dets = [d for d in dets if d.cls == gasket_cls and d.conf >= gasket_conf_min]
+                        shield_dets = [d for d in dets if d.cls == end_item_classes[0] and d.conf >= end_item_conf_min] if end_item_classes else []
+                        tweez_dets = [d for d in dets if d.cls == tweezers_cls and d.conf >= tweezers_conf_min]
+
+                        if not gasket_dets or not shield_dets:
+                            released_streak = 0
+                            continue
+
+                        # Best gasket-shielding IoU
+                        best_gs = 0.0
+                        for g in gasket_dets:
+                            gb = aabb(g.poly)
+                            for s in shield_dets:
+                                sb = aabb(s.poly)
+                                best_gs = max(best_gs, iou_aabb(gb, sb))
+
+                        # Best gasket-tweezers IoU
+                        best_gt = 0.0
+                        for g in gasket_dets:
+                            gb = aabb(g.poly)
+                            for t in tweez_dets:
+                                tb = aabb(t.poly)
+                                best_gt = max(best_gt, iou_aabb(gb, tb))
+
+                        gasket_ok = best_gs >= gasket_shield_iou_min and best_gt < gasket_tweezers_iou_max
+                        if gasket_ok:
+                            released_streak += 1
+                            best_score = max(best_score, best_gs)
+                        else:
+                            released_streak = 0
+
+                        if released_streak >= gasket_end_hold:
+                            # Prevent very early end: require the action to have
+                            # progressed enough since phase2 start.
+                            min_ok = True
+                            if gasket_min_frames_before_end > 0 and phase2_start_frame is not None:
+                                min_ok = (f - int(phase2_start_frame) + 1) >= gasket_min_frames_before_end
+                            if min_ok:
+                                end_frame = f
+                                phase2_break_reason = "gasket_on_shielding_met"
+                                break
+
+                        # Hard cap
+                        if max_len > 0 and candidate_start_frame is not None and (f - candidate_start_frame + 1) >= max_len:
+                            end_frame = f
+                            phase2_break_reason = "max_action_frames_cap"
+                            break
+                        continue
+
                     if end_mode == "tray_return_then_release_fallback" and not use_release_fallback:
                         if active_hand is None or hand_box is None:
                             continue
@@ -1128,7 +1506,7 @@ def main() -> None:
 
                 clip_start = max(0, start_frame - pre_b)
                 clip_end = end_frame + post_b
-                clip_name = f"{a_idx+1:02d}_{act_id}_{clip_start}_{clip_end}.mp4"
+                clip_name = f"{a_idx+1:02d}_{act_id}.mp4"
                 cut_clip(video_path, clips_dir / clip_name, clip_start, clip_end)
                 timeline_rows.append(
                     {
@@ -1142,6 +1520,8 @@ def main() -> None:
                         "best_score": round(best_score, 4),
                         "clip_path": str((clips_dir / clip_name)),
                         "segment_source": "from_tray_pick_score_v1",
+                        "_runtime_outcome": "completed",
+                        "_runtime_end_reason": str(phase2_break_reason or ""),
                     }
                 )
                 if sequential:
@@ -1422,7 +1802,7 @@ def main() -> None:
 
                 clip_start = max(0, start_frame - pre_b)
                 clip_end = end_frame + post_b
-                clip_name = f"{a_idx+1:02d}_{act_id}_{clip_start}_{clip_end}.mp4"
+                clip_name = f"{a_idx+1:02d}_{act_id}.mp4"
                 cut_clip(video_path, clips_dir / clip_name, clip_start, clip_end)
                 timeline_rows.append(
                     {
@@ -1704,7 +2084,7 @@ def main() -> None:
 
                 clip_start = max(0, start_frame - pre_b)
                 clip_end = end_frame + post_b
-                clip_name = f"{a_idx+1:02d}_{act_id}_{clip_start}_{clip_end}.mp4"
+                clip_name = f"{a_idx+1:02d}_{act_id}.mp4"
                 cut_clip(video_path, clips_dir / clip_name, clip_start, clip_end)
                 timeline_rows.append(
                     {
@@ -1788,7 +2168,7 @@ def main() -> None:
             if start_frame is not None and end_frame is not None and end_frame >= start_frame:
                 clip_start = max(0, start_frame - pre_b)
                 clip_end = end_frame + post_b
-                clip_name = f"{a_idx+1:02d}_{act_id}_{clip_start}_{clip_end}.mp4"
+                clip_name = f"{a_idx+1:02d}_{act_id}.mp4"
                 cut_clip(video_path, clips_dir / clip_name, clip_start, clip_end)
                 timeline_rows.append(
                     {
@@ -1829,7 +2209,7 @@ def main() -> None:
                     if end_frame - start_frame + 1 >= min_len:
                         clip_start = max(0, start_frame - pre_b)
                         clip_end = end_frame + post_b
-                        clip_name = f"{a_idx+1:02d}_{act_id}_{clip_start}_{clip_end}.mp4"
+                        clip_name = f"{a_idx+1:02d}_{act_id}.mp4"
                         cut_clip(video_path, clips_dir / clip_name, clip_start, clip_end)
                         timeline_rows.append(
                             {
@@ -1861,7 +2241,7 @@ def main() -> None:
                         if start_frame is not None and end_frame - start_frame + 1 >= min_len:
                             clip_start = max(0, start_frame - pre_b)
                             clip_end = end_frame + post_b
-                            clip_name = f"{a_idx+1:02d}_{act_id}_{clip_start}_{clip_end}.mp4"
+                            clip_name = f"{a_idx+1:02d}_{act_id}.mp4"
                             cut_clip(video_path, clips_dir / clip_name, clip_start, clip_end)
                             timeline_rows.append(
                                 {
@@ -1905,15 +2285,21 @@ def main() -> None:
 
     # Fill idle segments between detected actions
     timeline_rows.sort(key=lambda x: int(x["start_frame"]))
-    apply_neighbor_segment_fallback(
-        timeline_rows,
-        actions,
-        neighbor_fb_cfg,
-        video_path,
-        clips_dir,
-        global_pre_b,
-        global_post_b,
-    )
+    fb_rules: List[dict] = []
+    if isinstance(neighbor_fb_cfg, list):
+        fb_rules = [r for r in neighbor_fb_cfg if isinstance(r, dict)]
+    elif isinstance(neighbor_fb_cfg, dict) and neighbor_fb_cfg:
+        fb_rules = [neighbor_fb_cfg]
+    for fb in fb_rules:
+        apply_neighbor_segment_fallback(
+            timeline_rows,
+            actions,
+            fb,
+            video_path,
+            clips_dir,
+            global_pre_b,
+            global_post_b,
+        )
     timeline_rows.sort(key=lambda x: int(x["start_frame"]))
     if skip_idle:
         # No Idle rows. Also trim clips to [start_frame, end_frame] to avoid overlap caused by buffers.
@@ -1979,6 +2365,125 @@ def main() -> None:
                 }
             ]
 
+    # Summary table: total seconds per action_id on the original video.
+    # This is computed from [start_frame, end_frame] of each timeline row.
+    durations: Dict[str, dict] = {}
+    for r in final_rows:
+        act_id = str(r.get("action_id", ""))
+        if act_id == "Idle":
+            continue
+        s = int(r.get("start_frame", -1))
+        e = int(r.get("end_frame", -1))
+        if s < 0 or e < s:
+            continue
+        seconds = (e - s + 1) / fps
+        if act_id not in durations:
+            durations[act_id] = {
+                "action_id": act_id,
+                "description": str(r.get("description", "")),
+                "occurrences": 0,
+                "total_seconds": 0.0,
+            }
+        durations[act_id]["occurrences"] += 1
+        durations[act_id]["total_seconds"] += float(seconds)
+
+    durations_rows = []
+    for act_id, d in durations.items():
+        occ = int(d["occurrences"])
+        tot = float(d["total_seconds"])
+        durations_rows.append(
+            {
+                "action_id": act_id,
+                "description": d.get("description", ""),
+                "occurrences": occ,
+                "total_seconds": round(tot, 4),
+                "mean_seconds": round(tot / occ, 4) if occ > 0 else 0.0,
+            }
+        )
+    durations_rows.sort(key=lambda x: (x["action_id"]))
+
+    action_durations_csv = out_dir / "action_durations.csv"
+    with action_durations_csv.open("w", newline="", encoding="utf-8") as f:
+        fieldnames = ["action_id", "description", "occurrences", "total_seconds", "mean_seconds"]
+        writer = csv.DictWriter(f, fieldnames=fieldnames)
+        writer.writeheader()
+        for row in durations_rows:
+            writer.writerow(row)
+
+    if RENDER_TIMER_VIDEO:
+        # Render on top of the original video. This does not require clips.
+        timer_out = out_dir / "video_with_timer_overlay.mp4"
+        render_video_with_timer_overlay(video_path, timer_out, fps, final_rows)
+
+    # Enrich timeline rows with explainability/debug columns.
+    action_cfg_by_id = {str(a.get("id", "")): a for a in actions}
+    debug_dir = out_dir / "debug"
+    for r in final_rows:
+        dbg = None
+        act_id = str(r.get("action_id", ""))
+        seg_source = str(r.get("segment_source", ""))
+        # If clips are disabled, clear clip metadata to avoid implying that mp4 files exist.
+        if not MAKE_CLIPS:
+            if r.get("start_frame") is not None:
+                r["clip_start_frame"] = int(r.get("start_frame"))
+            if r.get("end_frame") is not None:
+                r["clip_end_frame"] = int(r.get("end_frame"))
+            r["clip_path"] = ""
+
+        r["quality_score"] = r.get("best_score", "")
+        r["outcome"] = "completed"
+        r["start_reason"] = "detected_start"
+        r["end_reason"] = "detected_end"
+        r["debug_file"] = ""
+
+        if act_id == "Idle":
+            r["outcome"] = "idle"
+            r["start_reason"] = "idle_gap"
+            r["end_reason"] = "idle_gap"
+            r["reliability_0_100"] = 0.0
+            continue
+
+        if seg_source == "neighbor_fallback":
+            r["outcome"] = "fallback_segment"
+            r["start_reason"] = "neighbor_fallback_prev_end_plus_1"
+            r["end_reason"] = "neighbor_fallback_next_start_minus_1"
+
+        dbg_path = debug_dir / f"from_tray_{act_id}.json"
+        if dbg_path.exists():
+            try:
+                dbg = json.loads(dbg_path.read_text(encoding="utf-8"))
+            except Exception:
+                dbg = {}
+            r["debug_file"] = str(dbg_path)
+            if dbg:
+                r["outcome"] = str(dbg.get("outcome", r["outcome"]))
+                primary_failure = dbg.get("primary_failure")
+                if primary_failure:
+                    r["end_reason"] = str(primary_failure)
+                phase2_reason = dbg.get("phase2_break_reason")
+                if phase2_reason:
+                    r["end_reason"] = str(phase2_reason)
+                if dbg.get("candidate_start_frame") is not None:
+                    r["start_reason"] = "from_tray_candidate_committed"
+                elif dbg.get("start_frame") is not None:
+                    r["start_reason"] = "from_tray_start_detected"
+                if dbg.get("wrote_pending"):
+                    r["end_reason"] = "handoff_prev_end_to_next_start"
+                if dbg.get("completed_segment"):
+                    r["outcome"] = "completed"
+
+        # Fill default reasons for non-from_tray modes using mode name
+        if r.get("start_reason") == "detected_start" or r.get("end_reason") == "detected_end":
+            mode = str(action_cfg_by_id.get(act_id, {}).get("mode", "")).strip()
+            if mode:
+                if r.get("start_reason") == "detected_start":
+                    r["start_reason"] = f"{mode}:start"
+                if r.get("end_reason") == "detected_end":
+                    r["end_reason"] = f"{mode}:end"
+
+        act_mode = str(action_cfg_by_id.get(act_id, {}).get("mode", "")).strip()
+        r["reliability_0_100"] = compute_heuristic_reliability_0_100(r, dbg, act_mode)
+
     # Save timeline
     timeline_csv = out_dir / "timeline.csv"
     with timeline_csv.open("w", newline="", encoding="utf-8") as f:
@@ -1991,8 +2496,14 @@ def main() -> None:
             "clip_start_frame",
             "clip_end_frame",
             "best_score",
+            "quality_score",
+            "reliability_0_100",
             "clip_path",
             "segment_source",
+            "outcome",
+            "start_reason",
+            "end_reason",
+            "debug_file",
         ]
         writer = csv.DictWriter(f, fieldnames=fieldnames, extrasaction="ignore")
         writer.writeheader()

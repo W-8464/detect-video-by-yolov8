@@ -4,23 +4,96 @@ from ultralytics import YOLO
 from pathlib import Path
 import json
 import argparse
+import yaml
 
 # 1. Load models
 # - full-frame: dùng để track hand/tweezers lấy ROI
-# - ROI model: detect shielding/gasket trong ROI (in-hand)
+# - ROI model: detect shielding/gasket/bracket trong ROI (in-hand)
+# - Pose model: detect hand keypoints
 ROOT = Path(__file__).resolve().parent
-full_model_path = str((ROOT / 'runs/obb/action_model_v62/weights/best.pt').resolve())
-roi_model_path = str((ROOT / 'runs/obb/action_model_roi_v1/weights/best.pt').resolve())
+full_model_path = str((ROOT / 'runs/obb/action_model_v10/weights/best.pt').resolve())
+roi_model_path = str((ROOT / 'runs/obb/action_model_roi_v5/weights/best.pt').resolve())
+pose_model_path = str((ROOT / 'runs/pose/pose_hand_v6/weights/best.pt').resolve())
 
 full_model = YOLO(full_model_path)
 roi_model = YOLO(roi_model_path)
+pose_model = YOLO(pose_model_path)
+
+
+def _load_class_mapping():
+    data_yaml_path = ROOT / "data.yaml"
+    global_yaml_path = ROOT / "sop_global_shared.yaml"
+
+    with open(data_yaml_path, "r", encoding="utf-8") as f:
+        data_cfg = yaml.safe_load(f)
+    class_names = data_cfg.get("names", [])
+    CLASS_ID_TO_NAME = {i: str(name) for i, name in enumerate(class_names)}
+    CLASS_NAME_TO_ID = {str(name): i for i, name in enumerate(class_names)}
+
+    global_cfg = {}
+    if global_yaml_path.exists():
+        with open(global_yaml_path, "r", encoding="utf-8") as f:
+            global_cfg = yaml.safe_load(f).get("global", {})
+
+    raw_colors = global_cfg.get("class_colors", {})
+    CLASS_COLORS = {}
+    for name, color in raw_colors.items():
+        cls_id = CLASS_NAME_TO_ID.get(str(name))
+        if cls_id is not None:
+            CLASS_COLORS[cls_id] = tuple(color)
+
+    roi_mapping = global_cfg.get("roi_model_mapping", {})
+    ROI_TO_FULL_CLASS = {}
+    for roi_id_str, class_name in roi_mapping.items():
+        full_id = CLASS_NAME_TO_ID.get(str(class_name))
+        if full_id is not None:
+            ROI_TO_FULL_CLASS[int(roi_id_str)] = full_id
+
+    roi_small_names = global_cfg.get("roi_small_classes", [])
+    ROI_SMALL_CLASSES = {CLASS_NAME_TO_ID[n] for n in roi_small_names if n in CLASS_NAME_TO_ID}
+
+    ROI_PAD = float(global_cfg.get("tuning", {}).get("roi_pad", 1.6))
+
+    return (
+        CLASS_ID_TO_NAME,
+        CLASS_NAME_TO_ID,
+        CLASS_COLORS,
+        ROI_TO_FULL_CLASS,
+        ROI_SMALL_CLASSES,
+        ROI_PAD,
+    )
+
+
+(
+    CLASS_ID_TO_NAME,
+    CLASS_NAME_TO_ID,
+    CLASS_COLORS,
+    ROI_TO_FULL_CLASS,
+    ROI_SMALL_CLASSES,
+    ROI_PAD,
+) = _load_class_mapping()
+
+HAND_CLS = CLASS_NAME_TO_ID.get("hand", 0)
+TRAY_CLS = CLASS_NAME_TO_ID.get("tray", 1)
+BOARD_CLS = CLASS_NAME_TO_ID.get("board", 2)
+JIG_CLS = CLASS_NAME_TO_ID.get("jig", 3)
+LINER_CLS = CLASS_NAME_TO_ID.get("liner", 4)
+TWEEZERS_CLS = CLASS_NAME_TO_ID.get("tweezers", 5)
+PCIE_CABLE_CLS = CLASS_NAME_TO_ID.get("PCIe cable", 7)
+BRACKET_CLS = CLASS_NAME_TO_ID.get("bracket", 9)
+
+# Các class muốn track/vẽ từ full-frame model
+TRACK_FROM_FULL = [HAND_CLS, TWEEZERS_CLS, TRAY_CLS, BOARD_CLS, JIG_CLS, LINER_CLS, PCIE_CABLE_CLS, BRACKET_CLS]
+
+# Khi log, ta in conf các class này; shielding/gasket vẫn áp dụng threshold riêng bên dưới.
+LOG_FROM_FULL = set(TRACK_FROM_FULL) | ROI_SMALL_CLASSES
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Run two-stage OBB inference on a video.")
     parser.add_argument(
         "--input",
         type=str,
-        default=str((ROOT / "datasets/xb10_6.mp4").resolve()),
+        default=str((ROOT / "datasets/xb10_2_3.mp4").resolve()),
         help="Input video path",
     )
     parser.add_argument(
@@ -43,42 +116,6 @@ input_video_path = str(Path(args.input).resolve())
 input_stem = Path(input_video_path).stem
 output_video_path = str(Path(args.output).resolve()) if args.output else str((ROOT / f"{input_stem}_output.mp4").resolve())
 detections_output_path = str(Path(args.detections).resolve()) if args.detections else str((ROOT / f"{input_stem}_detections.jsonl").resolve())
-
-# 3. Bảng màu cho từng class (BGR) - thứ tự theo data.yaml
-CLASS_COLORS = {
-    0: (0, 255, 0),      # hand - xanh lá
-    1: (255, 0, 0),      # tray - xanh dương
-    2: (0, 0, 255),      # board - đỏ
-    3: (255, 255, 0),    # jig - cyan
-    4: (0, 255, 255),    # liner - vàng
-    5: (128, 255, 128),  # tweezers - xanh lá nhạt
-    6: (255, 128, 0),    # shielding - cam
-    7: (255, 0, 255),    # PCIe cable - hồng
-    8: (128, 0, 255),    # gasket - tím
-}
-
-HAND_CLS = 0
-TRAY_CLS = 1
-BOARD_CLS = 2
-JIG_CLS = 3
-LINER_CLS = 4
-TWEEZERS_CLS = 5
-PCIE_CABLE_CLS = 7
-ROI_PAD = 1.6  # crop rộng hơn bbox tay/nhíp
-
-# ROI model được train với data_roi.yaml (re-index): 0 hand, 1 tweezers, 2 shielding, 3 gasket
-ROI_TO_FULL_CLASS = {
-    0: HAND_CLS,
-    1: TWEEZERS_CLS,
-    2: 6,  # shielding
-    3: 8,  # gasket
-}
-
-# Các class muốn track/vẽ từ full-frame model (action_model_v62)
-TRACK_FROM_FULL = [HAND_CLS, TWEEZERS_CLS, TRAY_CLS, BOARD_CLS, JIG_CLS, LINER_CLS, PCIE_CABLE_CLS]
-
-# Khi log, ta in conf các class này; shielding/gasket vẫn áp dụng threshold riêng bên dưới.
-LOG_FROM_FULL = set(TRACK_FROM_FULL) | {6, 8}
 
 
 def poly_aabb(poly: np.ndarray):
@@ -106,7 +143,7 @@ def expand_clip_aabb(aabb, w, h, pad):
 
 def draw_polys_smart(frame, detections, names_by_cls):
     """
-    detections: list of dict {cls_id, conf, poly(4,2 int), track_id(optional)}
+    detections: list of dict {cls_id, conf, poly(4,2 int), track_id(optional), keypoints(optional)}
     Chỉ dán nhãn 1 box/class (conf cao nhất) để đỡ rối.
     """
     canvas = frame.copy()
@@ -121,6 +158,21 @@ def draw_polys_smart(frame, detections, names_by_cls):
         if c not in best_idx or conf > float(detections[best_idx[c]].get("conf", 0.0)):
             best_idx[c] = i
 
+    # SKELETON for 16 keypoints (Wrist + 5 fingers x 3 joints)
+    # 0: Wrist
+    # 1,2,3: Thumb
+    # 4,5,6: Index
+    # 7,8,9: Middle
+    # 10,11,12: Ring
+    # 13,14,15: Pinky
+    SKELETON = [
+        [0, 1], [1, 2], [2, 3],      # Thumb
+        [0, 4], [4, 5], [5, 6],      # Index
+        [0, 7], [7, 8], [8, 9],      # Middle
+        [0, 10], [10, 11], [11, 12], # Ring
+        [0, 13], [13, 14], [14, 15]  # Pinky
+    ]
+
     for i, d in enumerate(detections):
         cls_id = int(d["cls_id"])
         conf = float(d.get("conf", 0.0))
@@ -129,6 +181,26 @@ def draw_polys_smart(frame, detections, names_by_cls):
 
         pts = d["poly"].astype(np.int32)
         cv2.polylines(canvas, [pts], isClosed=True, color=color, thickness=2)
+
+        # Draw keypoints if available (Pose)
+        if "keypoints" in d and d["keypoints"] is not None:
+            kpts = d["keypoints"]  # (N, 3) or (N, 2)
+            for kp in kpts:
+                kx, ky = int(kp[0]), int(kp[1])
+                conf_kp = kp[2] if len(kp) > 2 else 1.0
+                if conf_kp > 0.2: # Giảm ngưỡng hiển thị keypoint
+                    cv2.circle(canvas, (kx, ky), 4, (0, 255, 0), -1)
+            
+            # Draw skeleton
+            for edge in SKELETON:
+                p1_idx, p2_idx = edge
+                if p1_idx < len(kpts) and p2_idx < len(kpts):
+                    p1 = kpts[p1_idx]
+                    p2 = kpts[p2_idx]
+                    conf1 = p1[2] if len(p1) > 2 else 1.0
+                    conf2 = p2[2] if len(p2) > 2 else 1.0
+                    if conf1 > 0.2 and conf2 > 0.2: # Giảm ngưỡng hiển thị skeleton
+                        cv2.line(canvas, (int(p1[0]), int(p1[1])), (int(p2[0]), int(p2[1])), (0, 255, 255), 2)
 
         if best_idx.get(cls_id) != i:
             continue
@@ -247,6 +319,10 @@ print(f"Ghi detections JSONL: {detections_output_path}")
 frame_idx = 0
 det_file = open(detections_output_path, "w", encoding="utf-8")
 
+# Smooth hand ROI per track_id để giảm giật crop window
+roi_history = {}  # track_id -> (rx1, ry1, rx2, ry2)
+ROI_SMOOTH_ALPHA = 0.45
+
 while True:
     success, frame = cap.read()
     if not success:
@@ -292,6 +368,16 @@ while True:
             if cls_id in (HAND_CLS, TWEEZERS_CLS):
                 aabb = poly_aabb(poly)
                 rx1, ry1, rx2, ry2 = expand_clip_aabb(aabb, width, height, ROI_PAD)
+                # Smooth ROI để crop window ổn định → pose model ổn định
+                if track_id is not None and track_id in roi_history:
+                    prx1, pry1, prx2, pry2 = roi_history[track_id]
+                    a = ROI_SMOOTH_ALPHA
+                    rx1 = int(a * rx1 + (1 - a) * prx1)
+                    ry1 = int(a * ry1 + (1 - a) * pry1)
+                    rx2 = int(a * rx2 + (1 - a) * prx2)
+                    ry2 = int(a * ry2 + (1 - a) * pry2)
+                if track_id is not None:
+                    roi_history[track_id] = (rx1, ry1, rx2, ry2)
                 hand_rois.append((rx1, ry1, rx2, ry2, track_id))
 
     # Stage 2: chạy ROI model trên crop để detect shielding/gasket "in-hand"
@@ -300,6 +386,31 @@ while True:
         if crop.size == 0:
             continue
 
+        # --- Pose Inference ---
+        # Chạy pose cho ROI nếu nó thuộc về class 'hand'
+        # Tìm detection tương ứng trong list hiện tại
+        target_hand_det = None
+        for d in detections:
+            if d.get("track_id") == parent_id and d["cls_id"] == HAND_CLS:
+                target_hand_det = d
+                break
+        
+        if target_hand_det is not None:
+            pose_results = pose_model.predict(crop, imgsz=416, conf=0.1, iou=0.5, verbose=False)
+            pose_res = pose_results[0]
+            if pose_res.keypoints is not None and len(pose_res.keypoints) > 0:
+                # Lấy keypoints của bàn tay có confidence cao nhất trong crop
+                # YOLOv8 pose data shape: (N, 16, 3) -> [x, y, conf]
+                kpts_data = pose_res.keypoints.data[0].cpu().numpy()
+                
+                # Chuyển về tọa độ full-frame
+                kpts_full = kpts_data.copy()
+                kpts_full[:, 0] += float(rx1)
+                kpts_full[:, 1] += float(ry1)
+                
+                target_hand_det["keypoints"] = kpts_full
+
+        # --- ROI OBB Inference ---
         roi_results = roi_model.predict(crop, conf=0.25, iou=0.4, verbose=False)
         roi_res = roi_results[0]
         if roi_res.obb is None or roi_res.obb.cls is None or roi_res.obb.xyxyxyxy is None:
@@ -312,7 +423,7 @@ while True:
         for j in range(len(roi_cls_ids)):
             roi_cls = int(roi_cls_ids[j])
             full_cls = ROI_TO_FULL_CLASS.get(roi_cls, None)
-            if full_cls not in (6, 8):  # chỉ quan tâm shielding/gasket
+            if full_cls not in ROI_SMALL_CLASSES:  # chỉ quan tâm shielding/gasket/bracket
                 continue
 
             poly = roi_polys[j].copy()
@@ -328,13 +439,19 @@ while True:
                 }
             )
 
+    # Dọn dẹp roi_history cho track không còn xuất hiện
+    active_ids = {d.get("track_id") for d in detections if d.get("track_id") is not None}
+    for tid in list(roi_history.keys()):
+        if tid not in active_ids:
+            del roi_history[tid]
+
     # Giảm rối: với shielding/gasket, giữ top-k theo mỗi track_id (tay/nhíp)
     TOPK_PER_PARENT = 3
     filtered = []
     small_by_key = {}
     for d in detections:
         cls_id = int(d["cls_id"])
-        if cls_id not in (6, 8):
+        if cls_id not in ROI_SMALL_CLASSES:
             filtered.append(d)
             continue
         key = (d.get("track_id", None), cls_id)
@@ -355,15 +472,17 @@ while True:
     for d in detections:
         cls_id = int(d["cls_id"])
         poly = d["poly"]
-        frame_payload["detections"].append(
-            {
-                "class": names_by_cls.get(cls_id, str(cls_id)),
-                "cls_id": cls_id,
-                "conf": float(d.get("conf", 0.0)),
-                "track_id": d.get("track_id", None),
-                "poly": [[float(x), float(y)] for x, y in poly.tolist()],
-            }
-        )
+        det_data = {
+            "class": names_by_cls.get(cls_id, str(cls_id)),
+            "cls_id": cls_id,
+            "conf": float(d.get("conf", 0.0)),
+            "track_id": d.get("track_id", None),
+            "poly": [[float(x), float(y)] for x, y in poly.tolist()],
+        }
+        if "keypoints" in d and d["keypoints"] is not None:
+            det_data["keypoints"] = [[float(kp[0]), float(kp[1]), float(kp[2])] for kp in d["keypoints"]]
+        
+        frame_payload["detections"].append(det_data)
     det_file.write(json.dumps(frame_payload, ensure_ascii=False) + "\n")
 
     # In log kết quả OBB
@@ -372,7 +491,7 @@ while True:
         if cls_id not in LOG_FROM_FULL:
             continue
         conf = float(d.get("conf", 0.0))
-        if cls_id in (6, 8) and conf < 0.5:
+        if cls_id in ROI_SMALL_CLASSES and conf < 0.5:
             continue
         cls_name = names_by_cls.get(cls_id, str(cls_id))
         track_id = d.get("track_id", None)

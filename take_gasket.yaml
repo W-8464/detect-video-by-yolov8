@@ -1,0 +1,82 @@
+global:
+  handoff_prev_end_to_next_start: true
+
+actions:
+  - id: take_gasket
+    description: "Lay gasket bang tweezers/hand tu liner hoac tray."
+    max_action_frames: 0
+    timer_start_phase: 0
+    phases:
+      - id: "effector_contacts_gasket_in_source"
+        conditions:
+          - type: "and"
+            sub_conditions:
+              - type: "or"
+                sub_conditions:
+                  - type: "iou"
+                    subject: "tweezers"
+                    target: "gasket"
+                    min_thr: 0.02
+                  - type: "iou"
+                    subject: "hand"
+                    target: "gasket"
+                    min_thr: 0.02
+                  - type: "same_roi"
+                    subject: "tweezers"
+                    target: "gasket"
+              - type: "or"
+                sub_conditions:
+                  - type: "contain"
+                    subject: "gasket"
+                    target: "liner"
+                    min_thr: 0.20
+                  - type: "contain"
+                    subject: "gasket"
+                    target: "tray"
+                    min_thr: 0.20
+        hold_frames: 5
+        grace_miss: 40
+      - id: "gasket_leaves_source"
+        conditions:
+          - type: "or"
+            sub_conditions:
+              - type: "and"
+                sub_conditions:
+                  - type: "or"
+                    sub_conditions:
+                      - type: "iou"
+                        subject: "tweezers"
+                        target: "gasket"
+                        min_thr: 0.01
+                      - type: "iou"
+                        subject: "hand"
+                        target: "gasket"
+                        min_thr: 0.01
+                      - type: "same_roi"
+                        subject: "tweezers"
+                        target: "gasket"
+                  - type: "not_contain"
+                    subject: "tweezers"
+                    target: "liner"
+                    max_thr: 0.05
+              - type: "and"
+                sub_conditions:
+                  - type: "or"
+                    sub_conditions:
+                      - type: "iou"
+                        subject: "tweezers"
+                        target: "gasket"
+                        min_thr: 0.01
+                      - type: "iou"
+                        subject: "hand"
+                        target: "gasket"
+                        min_thr: 0.01
+                      - type: "same_roi"
+                        subject: "tweezers"
+                        target: "gasket"
+                  - type: "not_contain"
+                    subject: "tweezers"
+                    target: "tray"
+                    max_thr: 0.05
+        hold_frames: 8
+        grace_miss: 60

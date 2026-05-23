@@ -294,7 +294,9 @@ def main() -> None:
         if s["images"] == 0:
             continue
         print(
-            f"- {sp}: images_seen={s['images']} rois_written={s['rois']} pos={s['pos']} neg={s['neg']} skipped_no_hand={s['skipped_no_hand']}"
+            f"- {sp}: images_seen={s['images']} rois_written={s['rois']} "
+            f"pos={s['pos']} neg={s['neg']} "
+            f"skipped_no_hand={s['skipped_no_hand']}"
         )
     if (dst / "data_roi.yaml").exists():
         print("🧾 Wrote:", str(dst / "data_roi.yaml"))

@@ -1,0 +1,35 @@
+global:
+  handoff_prev_end_to_next_start: false
+
+actions:
+  - id: put_board_into_jig
+    description: "Nhóm tác vụ độc lập: Đặt board vào jig. Bắt đầu khi board xuất hiện, hoàn thành khi board nằm gọn. Sau khi hoàn thành sẽ lưu CSV và đếm lại từ đầu."
+    max_action_frames: 0
+    
+    phases:
+      - id: "wait_board_appear"
+        conditions:
+          - type: "exists"
+            subject: "Target"
+            min_count: 1
+          - type: "history_missing"
+            subject: "Target"
+            history_len: 20
+            min_missing_frames: 15
+        hold_frames: 3
+        grace_miss: 10
+        
+      - id: "put_board_in_jig_or_static"
+        conditions:
+          - type: "or"
+            sub_conditions:
+              - type: "contain"
+                subject: "Target"
+                target: "jig"
+                min_thr: 0.90
+              - type: "stationary"
+                subject: "Target"
+                history_len: 10
+                min_iou: 0.85
+        hold_frames: 30
+        grace_miss: 30

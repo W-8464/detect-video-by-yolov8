@@ -1,0 +1,139 @@
+global:
+  min_conf: 0.25
+  pre_buffer_frames: 10
+  post_buffer_frames: 10
+  sequential: true
+  skip_idle: true
+  handoff_prev_end_to_next_start: true
+
+actions:
+  - id: board_to_jig
+    description: "Lấy board từ chuyền đặt vào jig"
+    max_action_frames: 140
+    phases:
+      - id: "wait_board_appear"
+        conditions:
+          - type: "exists"
+            subject: "board"
+        hold_frames: 1
+      - id: "board_in_jig"
+        conditions:
+          - type: "contain"
+            subject: "board"
+            target: "jig"
+            min_thr: 0.90
+        hold_frames: 60
+        grace_miss: 2
+
+  - id: pcie_from_tray_to_board
+    description: "Lấy PCIe cable từ tray gắn vào board"
+    max_action_frames: 220
+    phases:
+      - id: "hand_in_tray"
+        conditions:
+          - type: "iou"
+            subject: "hand"
+            target: "tray"
+            min_thr: 0.003
+        hold_frames: 1
+      - id: "hand_leaves_tray_with_pcie"
+        conditions:
+          - type: "not_iou"
+            subject: "hand"
+            target: "tray"
+            max_thr: 0.02
+          - type: "iou"
+            subject: "hand"
+            target: "PCIe cable"
+            min_thr: 0.02
+        hold_frames: 1
+        grace_miss: 24
+      # Cắt bỏ phase pcire_reach_board nếu không cứng cáp, gộp thẳng vào end condition.
+      - id: "release_pcie_on_board"
+        conditions:
+          - type: "iou"
+            subject: "PCIe cable"
+            target: "board"
+            min_thr: 0.25
+          - type: "not_iou"
+            subject: "hand"
+            target: "PCIe cable"
+            max_thr: 0.02
+        hold_frames: 14
+        grace_miss: 240
+
+  - id: shielding_from_tray
+    description: "Lấy shielding từ tray và dán gasket bằng nhíp nằm gọn trong 1 action"
+    max_action_frames: 800
+    phases:
+      - id: "hand_in_tray"
+        conditions:
+          - type: "iou"
+            subject: "hand"
+            target: "tray"
+            min_thr: 0.003
+        hold_frames: 1
+      - id: "leave_tray_with_shielding"
+        conditions:
+          - type: "not_iou"
+            subject: "hand"
+            target: "tray"
+            max_thr: 0.02
+          - type: "iou"
+            subject: "hand"
+            target: "shielding"
+            min_thr: 0.008
+        hold_frames: 1
+        grace_miss: 24
+      - id: "gasket_on_shielding"
+        conditions:
+          - type: "iou"
+            subject: "gasket"
+            target: "shielding"
+            min_thr: 0.40
+          - type: "not_iou"
+            subject: "gasket"
+            target: "tweezers"
+            max_thr: 0.012
+        hold_frames: 2
+        grace_miss: 240
+
+  - id: shielding_to_board
+    description: "Kế thừa shielding đã cầm, chỉ bắt kiện đè lên board và thả tay"
+    max_action_frames: 800
+    force_start: true
+    phases:
+      - id: "shielding_on_board"
+        conditions:
+          - type: "iou"
+            subject: "shielding"
+            target: "board"
+            min_thr: 0.10
+        hold_frames: 1
+      - id: "release_shielding"
+        conditions:
+          - type: "not_iou"
+            subject: "hand"
+            target: "shielding"
+            max_thr: 0.012
+        hold_frames: 10
+        grace_miss: 240
+
+  - id: board_back_to_conveyor
+    description: "Lấy board đặt lại chuyền (Bắt đầu khi board rời jig, kết thúc khi biến mất)"
+    max_action_frames: 140
+    allow_lookahead: true
+    phases:
+      - id: "board_starts_leaving_jig"
+        conditions:
+          - type: "not_contain"
+            subject: "board"
+            target: "jig"
+            max_thr: 0.88
+        hold_frames: 2
+      - id: "board_missing_from_camera"
+        conditions:
+          - type: "missing"
+            subject: "board"
+        hold_frames: 4
+        grace_miss: 10

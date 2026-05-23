@@ -1,0 +1,59 @@
+global:
+  handoff_prev_end_to_next_start: true
+
+actions:
+  - id: take_component
+    description: "Nhóm tác vụ độc lập: Lấy 1 kiện từ khay kéo ra khỏi khay."
+    max_action_frames: 180
+    timer_start_phase: 0
+    phases:
+      - id: "hand_enters_container_but_not_target"
+        conditions:
+          - type: "contain"
+            subject: "hand"
+            target: "Container"
+            min_thr: 0.35
+          - type: "not_contain"
+            subject: "hand"
+            target: "Target"
+            max_thr: 0.30
+          - type: "stationary"
+            subject: "Target"
+            history_len: 15
+            min_iou: 0.85
+        hold_frames: 4
+        grace_miss: 10
+      - id: "hand_leaves_container_or_enters_target"
+        conditions:
+          - type: "or"
+            sub_conditions:
+              - type: "not_contain"
+                subject: "hand"
+                target: "Container"
+                max_thr: 0.30
+              - type: "contain"
+                subject: "hand"
+                target: "Target"
+                min_thr: 0.30
+        hold_frames: 3
+        grace_miss: 10
+
+    score_rules:
+      spatial:
+        subject: "hand"
+        target: "Container"
+        weight: 1.0
+      temporal:
+        subject: "hand"
+        target: "Container"
+        threshold: 0.30
+        min_frames: 5
+        max_frames: 40
+        weight: 0.5
+      verification:
+        effector: "hand"
+        component: "Component"
+        post_frames: 60
+        min_hits: 3
+        weight: 3.0
+        prerequisite: true

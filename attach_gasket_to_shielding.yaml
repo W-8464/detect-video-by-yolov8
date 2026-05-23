@@ -1,0 +1,31 @@
+global:
+  handoff_prev_end_to_next_start: true
+
+actions:
+  - id: attach_gasket_to_shielding
+    description: "Dac thu: Gasket duoc dan vao Shielding khi hai lieu chong len nhau."
+    max_action_frames: 0
+    timer_start_phase: 0
+    phases:
+      - id: "pick_gasket_with_tweezers"
+        conditions:
+          - type: "or"
+            sub_conditions:
+              - type: "iou"
+                subject: "tweezers"
+                target: "gasket"
+                min_thr: 0.02
+              - type: "iou"
+                subject: "hand"
+                target: "gasket"
+                min_thr: 0.02
+        hold_frames: 2
+        grace_miss: 20
+      - id: "gasket_overlaps_shielding"
+        conditions:
+          - type: "contain"
+            subject: "gasket"
+            target: "shielding"
+            min_thr: 0.20
+        hold_frames: 2
+        grace_miss: 30

@@ -1,0 +1,61 @@
+<div class="processor-container">
+  <div class="upload-card">
+    <h1 class="title">Hệ thống phân tích Video</h1>
+    <p class="subtitle">Tự động nhận diện và gán nhãn hành động với YOLO OBB</p>
+
+    <!-- Upload Area -->
+    <div class="drop-zone" [class.file-selected]="selectedFile">
+      <input type="file" #fileInput (change)="onFileSelected($event)" accept="video/mp4,video/x-m4v,video/*" hidden>
+      <div class="drop-content" (click)="fileInput.click()">
+        <span class="icon">📁</span>
+        <h3 *ngIf="!selectedFile">Nhấn để chọn Raw Video</h3>
+        <h3 *ngIf="selectedFile">{{ selectedFile.name }}</h3>
+        <p *ngIf="!selectedFile">hoặc kéo thả file vào đây (Định dạng MP4)</p>
+      </div>
+    </div>
+
+    <!-- Processing Status -->
+    <div class="status-section" *ngIf="processingState !== 'idle'">
+      <div class="progress-container" *ngIf="processingState === 'uploading' || processingState === 'processing'">
+        <div class="progress-info">
+          <span class="status-text text-pulsate">
+            {{ processingState === 'uploading' ? 'Đang Upload Video...' : 'Đang xử lý (Inference + Segmentation)...' }}
+          </span>
+          <span class="percentage" *ngIf="processingState === 'uploading'">{{ uploadProgress }}%</span>
+        </div>
+        <div class="progress-bar">
+          <div class="progress-fill" [style.width.%]="uploadProgress" [class.indeterminate]="processingState === 'processing'"></div>
+        </div>
+      </div>
+
+      <div class="alert alert-error" *ngIf="processingState === 'error'">
+        <span>❌</span> {{ errorMessage }}
+      </div>
+    </div>
+
+    <!-- Actions -->
+    <div class="action-buttons">
+      <button 
+        class="btn btn-primary" 
+        [disabled]="!selectedFile || processingState === 'uploading' || processingState === 'processing'"
+        (click)="onUpload()"
+        *ngIf="processingState === 'idle' || processingState === 'error'">
+        Bắt đầu xử lý
+      </button>
+
+      <button 
+        class="btn btn-success" 
+        *ngIf="processingState === 'done'"
+        (click)="downloadResult()">
+        <span>⬇️</span> Tải Video Result
+      </button>
+      
+      <button 
+        class="btn btn-secondary" 
+        *ngIf="processingState === 'done'"
+        (click)="selectedFile = null; resultVideoUrl = null; processingState = 'idle'">
+        Xử lý video khác
+      </button>
+    </div>
+  </div>
+</div>

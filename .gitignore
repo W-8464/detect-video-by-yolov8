@@ -2,7 +2,7 @@
 # YOLO & Computer Vision Project .gitignore
 # ==============================================================
 
-# 1. Môi trường Python (Virtual Environment & Caches)
+# 1. Python (Virtual Environment & Caches)
 venv/
 env/
 __pycache__/
@@ -11,27 +11,25 @@ __pycache__/
 .pytest_cache/
 .coverage
 htmlcov/
+*.egg-info/
+*.egg
+.installed.cfg
+
+# 2. Build & Distribution
 build/
-develop-eggs/
 dist/
-downloads/
+develop-eggs/
 eggs/
 .eggs/
-lib/
-lib64/
+downloads/
 parts/
 sdist/
 var/
 wheels/
 share/python-wheels/
-*.egg-info/
-.installed.cfg
-*.egg
 
-# 2. Dữ liệu nặng (Datasets, Videos, Images)
-# KHÔNG BAO GIỜ đẩy video mp4/avi, ảnh thô (jpg, png) hay file jsonl khổng lồ lên Git
+# 3. Dữ liệu nặng (Datasets, Videos, Images)
 datasets/
-data/
 *.mp4
 *.avi
 *.mkv
@@ -40,27 +38,36 @@ data/
 roi_debug_frames/
 SOP_Cycle_Time_Report.csv
 
-# 3. Model Weights (Trọng số từ YOLO/AI - Cực kỳ lớn, nên nén đưa lên Drive/S3)
+# 4. Model Weights (YOLO / PyTorch)
 *.pt
 *.pth
 *.onnx
 *.engine
 *.tflite
 weights/
-models/
 
-# 4. Thư mục chạy huấn luyện (Training & Inference Outputs)
-# YOLOv8 tự động sinh ra thư mục runs/ chứa log, biểu đồ, weights... Không nên push lên Git
+# 5. Training & Inference Outputs
 runs/
 actions/
 clips/
 debug/
 
-# 5. Các file Jupyter Notebook checkpoints (nếu bạn có xài)
+# 6. Frontend (Angular) build artifacts
+frontend-video/node_modules/
+frontend-video/dist/
+frontend-video/tmp/
+
+# 7. Binary executables
+DynamicSOPBuilder
+
+# 8. Jupyter Notebook checkpoints
 .ipynb_checkpoints
 
-# 6. Môi trường Editor & Hệ thống điều hành (IDE/OS)
+# 9. IDE / Editor / OS
 .vscode/
 .idea/
 .DS_Store
 Thumbs.db
+
+# 10. Windsurf / Cascade internal
+.antigravity/

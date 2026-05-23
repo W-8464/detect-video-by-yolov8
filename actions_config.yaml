@@ -29,12 +29,17 @@ global:
   skip_idle: true
   # Ghi debug/from_tray_<action_id>.json cho mỗi nhánh from_tray_pick_score_v1
   from_tray_debug: true
-  # Khi action_id không có segment, chèn [end(prev)+1 .. start(next)-1] (chỉ khi đủ prev+next trên timeline)
+  # Khi action_id không có segment, chèn [end(prev)+1 .. start(next)-1] (chỉ khi đủ prev+next trên timeline).
+  # Hai dòng shielding (3 + 4): quy tắc 1 tránh nuốt cả khoảng action 4; quy tắc 2 lấp action 4 khi thiếu.
   neighbor_segment_fallback:
-    enabled: true
-    action_id: shielding_from_tray
-    prev_action_id: pcie_from_tray_to_board
-    next_action_id: board_back_to_conveyor
+    - enabled: true
+      action_id: shielding_from_tray
+      prev_action_id: pcie_from_tray_to_board
+      next_action_id: shielding_to_board
+    - enabled: true
+      action_id: shielding_to_board
+      prev_action_id: shielding_from_tray
+      next_action_id: board_back_to_conveyor
 
 # Vùng tĩnh (placeholder) - cần chỉnh theo camera của bạn
 zones:
@@ -95,7 +100,7 @@ actions:
     confirm_item_classes: ["PCIe cable"]
     confirm_hand_iou_min: 0.02
     confirm_hold_frames: 1
-    confirm_miss_grace: 12
+    confirm_miss_grace: 24
     negative_item_classes: []
     # end item (release + place)
     end_item_classes: ["PCIe cable"]
@@ -109,7 +114,7 @@ actions:
     use_release_fallback: true
     end_mode: tray_return_then_release_fallback
     # Tăng hold để tránh end sớm do tay lướt qua tray.
-    end_primary_hold_frames: 45
+    end_primary_hold_frames: 20
     end_primary_timeout_frames: 120
     end_require_hand_in_tray: true
     end_hand_in_tray_iou_min: 0.02
@@ -151,21 +156,67 @@ actions:
       manipulation: 0.25
 
   - id: shielding_from_tray
-    description: "Lấy shielding từ tray và gắn vào board (gộp với gasket)"
+    description: "Lấy shielding từ tray và dán gasket bằng nhíp"
     mode: from_tray_pick_score_v1
     # shared from_tray definition
+    cross_tray_hold_frames: 10
     hand_tray_iou_min: 0.003
     leave_tray_iou_max: 0.02
     hand_tray_hold_frames: 1
     leave_hold_frames: 1
-    # confirm/held item (shielding is required; gasket just appears alongside)
+    # confirm/held item
     confirm_item_classes: ["shielding"]
     confirm_hand_iou_min: 0.008
     confirm_hold_frames: 1
-    confirm_miss_grace: 12
+    confirm_miss_grace: 24
     negative_item_classes: ["PCIe cable"]
     negative_max_hand_iou: 0.08
-    # end item (mount onto board)
+    # end: gasket nằm trên shielding và rời khỏi tweezers
+    end_mode: gasket_on_shielding_v1
+    end_item_classes: ["shielding"]
+    end_item_conf_min: 0.45
+    gasket_class: "gasket"
+    tweezers_class: "tweezers"
+    gasket_shield_iou_min: 0.40
+    # Trong gated-end (gasket on shielding), dùng IoU trực tiếp thay vì cover/inter-area,
+    # để tránh trường hợp IoU quá nhỏ nhưng vẫn đang giao nhau theo cảm quan.
+    use_gasket_tweezers_iou_gate: true
+    gasket_tweezers_iou_max: 0.012
+    # Số frame giữ điều kiện đủ để end; giảm để phù hợp giai đoạn detector có thể mất nhãn ngắn.
+    gasket_end_hold_frames: 2
+    # Tránh end quá sớm sau khi vào phase2 (tức là vừa commit xong).
+    # Tính theo frame sau `phase2_start_frame`.
+    gasket_min_frames_before_end: 30
+    gasket_conf_min: 0.25
+    tweezers_conf_min: 0.25
+
+    object_class: "shielding"
+    tray_class: "tray"
+    target_class: "board"
+    hand_class: "hand"
+    tray_conf_min: 0.70
+    hand_conf_min: 0.60
+    shielding_conf_min: 0.45
+    board_conf_min: 0.70
+    grace_miss_frames: 10
+    end_miss_grace: 240
+    end_hold_frames: 10
+    max_action_frames: 800
+    source:
+      type: object_class
+      class_name: "tray"
+    target:
+      type: object_class
+      class_name: "board"
+
+  - id: shielding_to_board
+    description: "Đặt shielding (đã dán gasket) lên board"
+    mode: from_tray_pick_score_v1
+    skip_tray_pick: true
+    start_from_prev_action_end: true
+    start_from_prev_action_id: "shielding_from_tray"
+    start_from_prev_end_reasons: ["gasket_on_shielding_met"]
+    # end: shielding nằm trên board và rời khỏi tay
     end_item_classes: ["shielding"]
     end_item_conf_min: 0.45
     end_release_hand_iou_max: 0.012
@@ -175,12 +226,12 @@ actions:
     release_floor_ratio: 0.2
     release_ratio: 0.25
     end_mode: tray_return_then_release_fallback
+    use_release_fallback: true
     end_primary_hold_frames: 15
     end_primary_timeout_frames: 180
     end_require_hand_in_tray: true
     end_hand_in_tray_iou_min: 0.02
-    end_exclude_start_tray: true
-    end_exclude_start_tray_iou_thr: 0.3
+    end_exclude_start_tray: false
     end_hold_mode: timeout
 
     object_class: "shielding"
@@ -192,6 +243,7 @@ actions:
     shielding_conf_min: 0.45
     board_conf_min: 0.70
     grace_miss_frames: 10
+    end_miss_grace: 240
     end_hold_frames: 10
     max_action_frames: 800
     source:
@@ -201,36 +253,13 @@ actions:
       type: object_class
       class_name: "board"
 
-  - id: shielding_to_board
-    description: "Gắn shielding vào board"
-    object_class: "shielding"
-    score_on: 0.72
-    score_off: 0.52
-    hold_frames_on: 4
-    hold_frames_off: 5
-    max_action_frames: 140
-    source:
-      type: object_class
-      class_name: "tray"
-    target:
-      type: object_class
-      class_name: "board"
-    manipulation:
-      require_hand_contact: true
-      require_tool_contact: false
-      release_after_target: true
-    weights:
-      space: 0.50
-      time: 0.25
-      manipulation: 0.25
-
   - id: board_back_to_conveyor
     description: "Lấy board đặt lại chuyền"
     mode: board_absent_end_v1
     object_class: "board"
     board_conf_min: 0.60
     grace_miss_frames: 10
-    # Action này có thể bắt đầu ngay từ frame sau action 3 (không chờ board xuất hiện lại)
+    # Action này có thể bắt đầu ngay từ frame sau action 4 (shielding_to_board)
     start_on_prev_end: true
     score_on: 0.72
     score_off: 0.52

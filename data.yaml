@@ -1,7 +1,7 @@
 train: datasets/yolo_format/images/train
 val: datasets/yolo_format/images/val
 
-nc: 9
+nc: 10
 
 names: [
   'hand',
@@ -12,5 +12,6 @@ names: [
   'tweezers',
   'shielding',
   'PCIe cable',
-  'gasket'
+  'gasket',
+  'bracket'
 ]

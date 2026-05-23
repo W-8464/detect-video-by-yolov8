@@ -1,0 +1,47 @@
+global:
+  handoff_prev_end_to_next_start: true
+
+actions:
+  - id: take_liner_from_tray
+    description: "Lấy liner (khay đệm) từ tray: tay vào tray, liner còn trong tray, rồi nhấc liner ra khỏi tray."
+    max_action_frames: 0
+    timer_start_phase: 0
+    phases:
+      - id: hand_reaches_tray
+        conditions:
+          - type: contain
+            subject: hand
+            target: tray
+            min_thr: 0.15
+        hold_frames: 3
+        grace_miss: 40
+
+      - id: liner_present_in_tray
+        conditions:
+          - type: contain
+            subject: liner
+            target: tray
+            min_thr: 0.12
+        hold_frames: 2
+        grace_miss: 30
+
+      - id: liner_leaves_tray
+        conditions:
+          - type: or
+            sub_conditions:
+              - type: not_contain
+                subject: liner
+                target: tray
+                max_thr: 0.25
+              - type: and
+                sub_conditions:
+                  - type: iou
+                    subject: hand
+                    target: liner
+                    min_thr: 0.04
+                  - type: not_contain
+                    subject: hand
+                    target: tray
+                    max_thr: 0.12
+        hold_frames: 3
+        grace_miss: 90

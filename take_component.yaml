@@ -1,0 +1,31 @@
+actions:
+  - id: take_component_to_target
+    description: "Nhóm tác vụ độc lập (Quy nạp): Lấy 1 kiện bất kỳ từ khay, kéo ra, và dán/gắn lên đích."
+    max_action_frames: 0 # BỎ TIMEOUT: Đợi đến khi xong thực sự
+    timer_start_phase: 0 # HỆ THỐNG MỚI: Bật timer ngay_từ_đầu khi BÀN TAY CHẠM LINH KIỆN TRONG KHAY
+    phases:
+      - id: "hand_grabs_component_in_container"
+        conditions:
+          - type: "iou"
+            subject: "hand"
+            target: "Container"     # Tay phải ở trong không gian của khay/bịch
+            min_thr: 0.003
+          - type: "iou"
+            subject: "hand"
+            target: "Component"     # Và tay phải ĐANG CHẠM/NẮM LẤY linh kiện
+            min_thr: 0.05
+        hold_frames: 2
+        grace_miss: 30
+      
+      - id: "release_component_on_target"
+        conditions:
+          - type: "contain"         # FIX TRÍ MẠNG: Dùng contain thay vì iou vì Gasket/PCIe nhỏ bằng mắt muỗi so với Mainboard
+            subject: "Component"
+            target: "Target"        # Có thể là board, bracket
+            min_thr: 0.20           # Nằm lọt 20% bên trong board là đạt (chống nhiễu PCIe vắt vẻo bên ngoài)
+          - type: "not_iou"
+            subject: "hand"
+            target: "Component"
+            max_thr: 0.06           # Nhới lỏng lên 6% để tránh tay vô tình quét qua mép kiện
+        hold_frames: 10
+        grace_miss: 240

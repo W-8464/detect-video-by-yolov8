@@ -1,0 +1,41 @@
+global:
+  handoff_prev_end_to_next_start: false
+
+actions:
+  - id: board_back_to_conveyor
+    description: "Nhóm tác vụ độc lập: Lấy board đặt lại chuyền. (Chỉ tính giờ từ khi board TỪ TRONG jig bắt đầu bị rút ra)"
+    max_action_frames: 0
+    timer_start_phase: 1  # Đồng hồ đếm thời gian thực thi chỉ bắt đầu từ Phase 1
+    phases:
+      - id: "board_stable_in_jig_or_static"
+        conditions:
+          - type: "or"
+            sub_conditions:
+              - type: "contain"
+                subject: "Target"
+                target: "jig"
+                min_thr: 0.90
+              - type: "stationary"
+                subject: "Target"
+                history_len: 10
+                min_iou: 0.85
+        hold_frames: 30
+        
+      - id: "board_starts_leaving_stable_state"
+        conditions:
+          - type: "or"
+            sub_conditions:
+              - type: "not_contain"
+                subject: "Target"
+                target: "jig"
+                max_thr: 0.88
+              - type: "missing"
+                subject: "Target"
+        hold_frames: 2
+        grace_miss: 30
+      - id: "board_missing_from_camera"
+        conditions:
+          - type: "missing"
+            subject: "Target"
+        hold_frames: 4
+        grace_miss: 10
