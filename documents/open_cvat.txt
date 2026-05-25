@@ -3,9 +3,9 @@ docker compose up -d
 source /home/admin/my_yolo_project/venv/bin/activate
 
 python dynamic_sop_builder.py \
-  --video datasets/xb10_2_1.mp4 \
-  --detections xb10_2_1_detections.jsonl \
+  --video datasets/xb10_1_17.mp4 \
+  --detections xb10_1_17_detections.jsonl \
   --global-config sop_global_shared.yaml \
   --templates put_board.yaml take_component.yaml return_board.yaml \
-  --output sop_inferred_xb10_2_1.yaml \
-  --overlay-output xb10_2_1_timer_overlay.mp4
+  --output sop_inferred_xb10_1_17.yaml \
+  --overlay-output xb10_1_17_timer_overlay.mp4

@@ -1,0 +1,50 @@
+global:
+  handoff_prev_end_to_next_start: true
+
+  class_groups:
+    Component:
+      - "PCIe cable"
+      - "shielding"
+      - "gasket"
+    Tool:
+      - "tweezers"
+    Target:
+      - "board"
+      - "bracket"
+    Container:
+      - "tray"
+
+  class_colors:
+    hand:       [0, 255, 0]
+    tray:       [255, 0, 0]
+    board:      [0, 0, 255]
+    jig:        [255, 255, 0]
+    liner:      [0, 255, 255]
+    tweezers:   [128, 255, 128]
+    shielding:  [255, 128, 0]
+    PCIe cable: [255, 0, 255]
+    gasket:     [128, 0, 255]
+    bracket:    [0, 128, 255]
+
+  roi_model_mapping:
+    0: hand
+    1: tweezers
+    2: shielding
+    3: gasket
+
+  roi_small_classes:
+    - shielding
+    - gasket
+
+  tuning:
+    conf_threshold: 0.55
+    max_window_frames: 300
+    rearm_frames: 12
+    phase_start_wait_frames: 220
+    semantic_lookback_frames: 300
+    attach_anchor_max_gap_frames: 150
+    gasket_attach_max_gap_frames: 220
+    min_take_gasket_span_frames: 25
+    scan_stride: 4
+    roi_pad: 1.6
+    return_role_threshold_offset: 0.1

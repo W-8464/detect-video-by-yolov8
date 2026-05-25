@@ -1,0 +1,303 @@
+global:
+  handoff_prev_end_to_next_start: true
+  class_groups:
+    Component:
+    - PCIe cable
+    - shielding
+    - gasket
+    Tool:
+    - tweezers
+    Target:
+    - board
+    - bracket
+    Container:
+    - tray
+  class_colors:
+    hand:
+    - 0
+    - 255
+    - 0
+    tray:
+    - 255
+    - 0
+    - 0
+    board:
+    - 0
+    - 0
+    - 255
+    jig:
+    - 255
+    - 255
+    - 0
+    liner:
+    - 0
+    - 255
+    - 255
+    tweezers:
+    - 128
+    - 255
+    - 128
+    shielding:
+    - 255
+    - 128
+    - 0
+    PCIe cable:
+    - 255
+    - 0
+    - 255
+    gasket:
+    - 128
+    - 0
+    - 255
+    bracket:
+    - 0
+    - 128
+    - 255
+  roi_model_mapping:
+    0: hand
+    1: tweezers
+    2: shielding
+    3: gasket
+  roi_small_classes:
+  - shielding
+  - gasket
+  tuning:
+    conf_threshold: 0.55
+    max_window_frames: 300
+    rearm_frames: 12
+    phase_start_wait_frames: 220
+    semantic_lookback_frames: 300
+    attach_anchor_max_gap_frames: 150
+    gasket_attach_max_gap_frames: 220
+    min_take_gasket_span_frames: 25
+    scan_stride: 4
+    roi_pad: 1.6
+    return_role_threshold_offset: 0.1
+actions:
+- id: put_board_into_jig_1
+  description: 'Nhóm tác vụ độc lập: Đặt board vào jig. Bắt đầu khi board xuất hiện,
+    hoàn thành khi board nằm gọn. Sau khi hoàn thành sẽ lưu CSV và đếm lại từ đầu.
+    (lần 1)'
+  max_action_frames: 0
+  phases:
+  - id: wait_board_appear
+    conditions:
+    - type: exists
+      subject: Target
+      min_count: 1
+    - type: history_missing
+      subject: Target
+      history_len: 20
+      min_missing_frames: 15
+    hold_frames: 3
+    grace_miss: 10
+  - id: put_board_in_jig_or_static
+    conditions:
+    - type: or
+      sub_conditions:
+      - type: contain
+        subject: Target
+        target: jig
+        min_thr: 0.9
+      - type: stationary
+        subject: Target
+        history_len: 10
+        min_iou: 0.85
+    hold_frames: 30
+    grace_miss: 30
+- id: take_component_1
+  description: 'Nhóm tác vụ độc lập (Quy nạp): Lấy 1 kiện bất kỳ từ khay, kéo ra,
+    và dán/gắn lên đích. (lần 1)'
+  max_action_frames: 0
+  timer_start_phase: 0
+  phases:
+  - id: hand_grabs_component_in_container
+    conditions:
+    - type: iou
+      subject: hand
+      target: Container
+      min_thr: 0.003
+    - type: iou
+      subject: hand
+      target: Component
+      min_thr: 0.05
+    hold_frames: 2
+    grace_miss: 30
+  - id: release_component_on_target
+    conditions:
+    - type: contain
+      subject: Component
+      target: Target
+      min_thr: 0.2
+    - type: not_iou
+      subject: hand
+      target: Component
+      max_thr: 0.06
+    hold_frames: 10
+    grace_miss: 240
+- id: take_component_2
+  description: 'Nhóm tác vụ độc lập (Quy nạp): Lấy 1 kiện bất kỳ từ khay, kéo ra,
+    và dán/gắn lên đích. (lần 2)'
+  max_action_frames: 0
+  timer_start_phase: 0
+  phases:
+  - id: hand_grabs_component_in_container
+    conditions:
+    - type: iou
+      subject: hand
+      target: Container
+      min_thr: 0.003
+    - type: iou
+      subject: hand
+      target: Component
+      min_thr: 0.05
+    hold_frames: 2
+    grace_miss: 30
+  - id: release_component_on_target
+    conditions:
+    - type: contain
+      subject: Component
+      target: Target
+      min_thr: 0.2
+    - type: not_iou
+      subject: hand
+      target: Component
+      max_thr: 0.06
+    hold_frames: 10
+    grace_miss: 240
+- id: take_component_3
+  description: 'Nhóm tác vụ độc lập (Quy nạp): Lấy 1 kiện bất kỳ từ khay, kéo ra,
+    và dán/gắn lên đích. (lần 3)'
+  max_action_frames: 0
+  timer_start_phase: 0
+  phases:
+  - id: hand_grabs_component_in_container
+    conditions:
+    - type: iou
+      subject: hand
+      target: Container
+      min_thr: 0.003
+    - type: iou
+      subject: hand
+      target: Component
+      min_thr: 0.05
+    hold_frames: 2
+    grace_miss: 30
+  - id: release_component_on_target
+    conditions:
+    - type: contain
+      subject: Component
+      target: Target
+      min_thr: 0.2
+    - type: not_iou
+      subject: hand
+      target: Component
+      max_thr: 0.06
+    hold_frames: 10
+    grace_miss: 240
+- id: take_component_4
+  description: 'Nhóm tác vụ độc lập (Quy nạp): Lấy 1 kiện bất kỳ từ khay, kéo ra,
+    và dán/gắn lên đích. (lần 4)'
+  max_action_frames: 0
+  timer_start_phase: 0
+  phases:
+  - id: hand_grabs_component_in_container
+    conditions:
+    - type: iou
+      subject: hand
+      target: Container
+      min_thr: 0.003
+    - type: iou
+      subject: hand
+      target: Component
+      min_thr: 0.05
+    hold_frames: 2
+    grace_miss: 30
+  - id: release_component_on_target
+    conditions:
+    - type: contain
+      subject: Component
+      target: Target
+      min_thr: 0.2
+    - type: not_iou
+      subject: hand
+      target: Component
+      max_thr: 0.06
+    hold_frames: 10
+    grace_miss: 240
+- id: board_back_to_conveyor_1
+  description: 'Nhóm tác vụ độc lập: Lấy board đặt lại chuyền. (Chỉ tính giờ từ khi
+    board TỪ TRONG jig bắt đầu bị rút ra) (lần 1)'
+  max_action_frames: 0
+  timer_start_phase: 1
+  phases:
+  - id: board_stable_in_jig_or_static
+    conditions:
+    - type: or
+      sub_conditions:
+      - type: contain
+        subject: Target
+        target: jig
+        min_thr: 0.9
+      - type: stationary
+        subject: Target
+        history_len: 10
+        min_iou: 0.85
+    hold_frames: 30
+  - id: board_starts_leaving_stable_state
+    conditions:
+    - type: or
+      sub_conditions:
+      - type: not_contain
+        subject: Target
+        target: jig
+        max_thr: 0.88
+      - type: missing
+        subject: Target
+    hold_frames: 2
+    grace_miss: 30
+  - id: board_missing_from_camera
+    conditions:
+    - type: missing
+      subject: Target
+    hold_frames: 4
+    grace_miss: 10
+_inference_meta:
+  total_matches: 6
+  matches:
+  - action_id: put_board_into_jig_1
+    source_template: put_board.yaml
+    start_frame: 26
+    match_start_frame: 1
+    end_frame: 72
+    confidence: 1.0
+  - action_id: take_component_1
+    source_template: take_component.yaml
+    start_frame: 89
+    match_start_frame: 49
+    end_frame: 346
+    confidence: 1.0
+  - action_id: take_component_2
+    source_template: take_component.yaml
+    start_frame: 357
+    match_start_frame: 353
+    end_frame: 372
+    confidence: 1.0
+  - action_id: take_component_3
+    source_template: take_component.yaml
+    start_frame: 421
+    match_start_frame: 361
+    end_frame: 444
+    confidence: 1.0
+  - action_id: take_component_4
+    source_template: take_component.yaml
+    start_frame: 460
+    match_start_frame: 437
+    end_frame: 683
+    confidence: 1.0
+  - action_id: board_back_to_conveyor_1
+    source_template: return_board.yaml
+    start_frame: 711
+    match_start_frame: 461
+    end_frame: 722
+    confidence: 1.0

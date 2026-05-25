@@ -8,7 +8,7 @@ import numpy as np
 import yaml
 import cv2
 
-from segment_actions_refactored import Detection, evaluate_condition, aabb, iou_aabb
+from segment_actions_refactored import Detection, evaluate_condition, aabb, iou_aabb, contain_ratio_aabb
 
 
 DEFAULT_TUNING = {
@@ -111,7 +111,7 @@ def load_detection_frames(detections_jsonl: Path) -> List[List[Detection]]:
             poly = d.get("poly")
             if not poly:
                 continue
-            parsed.append(Detection(cls=cls_name, conf=conf, poly=np.array(poly)))
+            parsed.append(Detection(cls=cls_name, conf=conf, poly=np.array(poly), track_id=d.get("track_id", None)))
         by_frame[frame_idx] = parsed
 
     if not by_frame:
@@ -201,8 +201,18 @@ class ActionTemplate:
         confidence = sum(phase_scores) / max(1, len(phase_scores))
         if timer_start_cursor == -1:
             timer_start_cursor = actual_start_cursor
-        
-        if not self.verify_component(frames, cursor, inherited_class_groups):
+
+        hand_track_ids: Optional[set] = None
+        if actual_start_cursor >= 0:
+            hand_track_ids = set()
+            for fi in range(actual_start_cursor, min(len(frames), cursor + 1)):
+                for d in frames[fi]:
+                    if d.cls == "hand" and d.track_id is not None:
+                        hand_track_ids.add(d.track_id)
+            if not hand_track_ids:
+                hand_track_ids = None
+
+        if not self.verify_component(frames, actual_start_cursor, cursor, inherited_class_groups, hand_track_ids=hand_track_ids):
             return actual_start_cursor, cursor, 0.0, timer_start_cursor
         
         return actual_start_cursor, cursor, confidence, timer_start_cursor
@@ -246,47 +256,96 @@ class ActionTemplate:
     def verify_component(
         self,
         frames: List[List[Detection]],
+        start_frame: int,
         end_frame: int,
         inherited_class_groups: Dict[str, List[str]],
+        hand_track_ids: Optional[set] = None,
     ) -> bool:
-        """Identify component by computing IoU between hand and Component classes
-        in the post_frames window after action completion.
+        """Identify which component was handled by checking:
+        1. Component was in Container before/during action start (was available to take)
+        2. Component had sustained IoU with hand during the action span
+        3. Component left the Container by post-action frames (was actually taken)
+        If hand_track_ids is provided, only consider hands with those track_ids.
         Sets self._last_detected_component to the component with highest cumulative IoU."""
         score_rules = self.action.get("score_rules", {})
         verification = score_rules.get("verification", {})
-        
+
         if not verification or not verification.get("prerequisite", False):
             self._last_detected_component = None
-            return True  # No verification required
-        
+            return True
+
         component_group = verification.get("component", "Component")
         post_frames = int(verification.get("post_frames", 60))
         min_hits = int(verification.get("min_hits", 1))
-        
+
         class_groups = dict(inherited_class_groups)
         class_groups.update(self.global_cfg.get("class_groups", {}))
-        
+
         component_classes = class_groups.get(component_group, [component_group])
-        
+        container_classes = class_groups.get("Container", [])
+
+        if start_frame < 0:
+            self._last_detected_component = None
+            return False
+
+        total_frames = len(frames)
+        action_start = max(0, start_frame)
+        action_end = min(total_frames, end_frame)
+        verify_end = min(total_frames, end_frame + post_frames)
+
+        # Phase A: which components were inside Container at action start?
+        # A component that was never in the tray cannot be "taken from tray".
+        was_in_container: Dict[str, bool] = {}
+        for i in range(action_start, min(total_frames, action_start + 15)):
+            frame_dets = frames[i]
+            container_dets = [d for d in frame_dets if d.cls in container_classes]
+            for c in frame_dets:
+                if c.cls not in component_classes:
+                    continue
+                if c.cls in was_in_container:
+                    continue
+                if container_dets:
+                    c_bbox = aabb(c.poly)
+                    if any(contain_ratio_aabb(c_bbox, aabb(ct.poly)) >= 0.30 for ct in container_dets):
+                        was_in_container[c.cls] = True
+        for comp_cls in component_classes:
+            if comp_cls not in was_in_container:
+                was_in_container[comp_cls] = False
+
+        # Phase B: accumulate IoU between hand and component during action + post frames
         iou_per_class: Dict[str, float] = {}
         hit_frames_per_class: Dict[str, int] = {}
-        for i in range(end_frame, min(len(frames), end_frame + post_frames)):
-            hand_dets = [d for d in frames[i] if d.cls == "hand"]
-            comp_dets = [d for d in frames[i] if d.cls in component_classes]
+        for i in range(action_start, verify_end):
+            frame_dets = frames[i]
+            hand_dets = [d for d in frame_dets if d.cls == "hand"]
+            if hand_track_ids is not None:
+                hand_dets = [d for d in hand_dets if d.track_id in hand_track_ids]
+            comp_dets = [d for d in frame_dets if d.cls in component_classes]
+            container_dets = [d for d in frame_dets if d.cls in container_classes]
+
             for h in hand_dets:
                 h_bbox = aabb(h.poly)
                 for c in comp_dets:
                     c_bbox = aabb(c.poly)
+                    # In post-action frames, skip component still inside container
+                    if i >= end_frame and container_dets:
+                        if any(contain_ratio_aabb(c_bbox, aabb(ct.poly)) >= 0.30 for ct in container_dets):
+                            continue
                     iou = iou_aabb(h_bbox, c_bbox)
                     if iou > 0.02:
                         iou_per_class[c.cls] = iou_per_class.get(c.cls, 0.0) + iou
                         hit_frames_per_class[c.cls] = hit_frames_per_class.get(c.cls, 0) + 1
-        
-        total_hits = sum(hit_frames_per_class.values())
-        if total_hits >= min_hits:
-            self._last_detected_component = max(iou_per_class, key=iou_per_class.get)
+
+        # Phase C: select best component that was in container and has sufficient hits
+        eligible = {
+            cls: iou for cls, iou in iou_per_class.items()
+            if was_in_container.get(cls, False) and hit_frames_per_class.get(cls, 0) >= min_hits
+        }
+
+        if eligible:
+            self._last_detected_component = max(eligible, key=eligible.get)
             return True
-        
+
         self._last_detected_component = None
         return False
 

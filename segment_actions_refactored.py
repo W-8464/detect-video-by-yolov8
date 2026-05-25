@@ -15,6 +15,7 @@ class Detection:
     cls: str
     conf: float
     poly: np.ndarray
+    track_id: Optional[int] = None
 
 def aabb(poly: np.ndarray) -> Tuple[float, float, float, float]:
     return float(poly[:, 0].min()), float(poly[:, 1].min()), float(poly[:, 0].max()), float(poly[:, 1].max())
@@ -51,8 +52,9 @@ def load_detections_jsonl(path: Path, min_conf: float) -> Dict[int, List[Detecti
             cls = str(d.get("class", d.get("cls", "")))
             conf = float(d.get("conf", 0.0))
             poly = d.get("poly", None)
+            track_id = d.get("track_id", None)
             if not cls or not poly or conf < min_conf: continue
-            by_frame[frame].append(Detection(cls, conf, np.array(poly)))
+            by_frame[frame].append(Detection(cls, conf, np.array(poly), track_id=track_id))
     return by_frame
 
 def cut_clip(video_path: Path, out_path: Path, start_frame: int, end_frame: int) -> None:
@@ -121,7 +123,7 @@ def evaluate_condition(dets: List[Detection], cond: dict, class_groups: dict = N
         past_frames = history_frames[-history_len:] if history_len > 0 else history_frames
         if not past_frames: return True
         min_iou = float(cond.get("min_iou", 0.85))
-        
+
         for s in subjs:
             s_box = aabb(s.poly)
             is_stationary = True
@@ -130,7 +132,14 @@ def evaluate_condition(dets: List[Detection], cond: dict, class_groups: dict = N
                 if not past_subjs:
                     is_stationary = False
                     break
-                best_iou = max((iou_aabb(s_box, aabb(pd.poly)) for pd in past_subjs), default=0.0)
+                if s.track_id is not None:
+                    same_track = [pd for pd in past_subjs if pd.track_id == s.track_id]
+                    if same_track:
+                        best_iou = max((iou_aabb(s_box, aabb(pd.poly)) for pd in same_track), default=0.0)
+                    else:
+                        best_iou = max((iou_aabb(s_box, aabb(pd.poly)) for pd in past_subjs), default=0.0)
+                else:
+                    best_iou = max((iou_aabb(s_box, aabb(pd.poly)) for pd in past_subjs), default=0.0)
                 if best_iou < min_iou:
                     is_stationary = False
                     break
@@ -153,7 +162,14 @@ def evaluate_condition(dets: List[Detection], cond: dict, class_groups: dict = N
                 past_subjs = [pd for pd in past_dets if pd.cls in subj_classes]
                 if not past_subjs:
                     continue
-                best_iou = max((iou_aabb(s_box, aabb(pd.poly)) for pd in past_subjs), default=0.0)
+                if s.track_id is not None:
+                    same_track = [pd for pd in past_subjs if pd.track_id == s.track_id]
+                    if same_track:
+                        best_iou = max((iou_aabb(s_box, aabb(pd.poly)) for pd in same_track), default=0.0)
+                    else:
+                        best_iou = max((iou_aabb(s_box, aabb(pd.poly)) for pd in past_subjs), default=0.0)
+                else:
+                    best_iou = max((iou_aabb(s_box, aabb(pd.poly)) for pd in past_subjs), default=0.0)
                 if best_iou >= max_iou:
                     has_moved = False
                     break
