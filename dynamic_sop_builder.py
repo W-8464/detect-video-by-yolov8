@@ -13,6 +13,8 @@ from segment_actions_refactored import Detection, evaluate_condition, aabb, iou_
 
 DEFAULT_TUNING = {
     "conf_threshold": 0.55,
+    "min_det_conf": 0.25,
+    "min_match_frames": 5,
     "max_window_frames": 300,
     "rearm_frames": 12,
     "phase_start_wait_frames": 220,
@@ -53,10 +55,34 @@ def draw_detection_boxes(frame: np.ndarray, detections: List[Detection], class_c
         if d.cls not in best_idx or d.conf > detections[best_idx[d.cls]].conf:
             best_idx[d.cls] = i
 
+    SKELETON = [
+        [0, 1], [1, 2], [2, 3],
+        [0, 4], [4, 5], [5, 6],
+        [0, 7], [7, 8], [8, 9],
+        [0, 10], [10, 11], [11, 12],
+        [0, 13], [13, 14], [14, 15]
+    ]
+
     for i, d in enumerate(detections):
         color = class_colors.get(d.cls, (200, 200, 200))
         pts = d.poly.astype(np.int32)
         cv2.polylines(canvas, [pts], isClosed=True, color=color, thickness=2)
+
+        if d.keypoints is not None and d.cls == "hand":
+            kpts = d.keypoints
+            for kp in kpts:
+                kx, ky = int(kp[0]), int(kp[1])
+                conf_kp = kp[2] if kp.shape[0] > 2 else 1.0
+                if conf_kp > 0.2:
+                    cv2.circle(canvas, (kx, ky), 4, (0, 255, 0), -1)
+            for edge in SKELETON:
+                p1_idx, p2_idx = edge
+                if p1_idx < len(kpts) and p2_idx < len(kpts):
+                    p1, p2 = kpts[p1_idx], kpts[p2_idx]
+                    c1 = p1[2] if p1.shape[0] > 2 else 1.0
+                    c2 = p2[2] if p2.shape[0] > 2 else 1.0
+                    if c1 > 0.2 and c2 > 0.2:
+                        cv2.line(canvas, (int(p1[0]), int(p1[1])), (int(p2[0]), int(p2[1])), (0, 255, 255), 2)
 
         if best_idx.get(d.cls) != i:
             continue
@@ -84,7 +110,7 @@ def load_yaml(path: Path) -> Dict[str, Any]:
     return data or {}
 
 
-def load_detection_frames(detections_jsonl: Path) -> List[List[Detection]]:
+def load_detection_frames(detections_jsonl: Path, min_conf: float = 0.0) -> List[List[Detection]]:
     by_frame: Dict[int, List[Detection]] = {}
     max_frame = 0
 
@@ -108,10 +134,14 @@ def load_detection_frames(detections_jsonl: Path) -> List[List[Detection]]:
             if not cls_name:
                 continue
             conf = float(d.get("conf", 0.0))
+            if conf < min_conf:
+                continue
             poly = d.get("poly")
             if not poly:
                 continue
-            parsed.append(Detection(cls=cls_name, conf=conf, poly=np.array(poly), track_id=d.get("track_id", None)))
+            kpts_raw = d.get("keypoints", None)
+            kpts = np.array(kpts_raw, dtype=np.float32) if kpts_raw else None
+            parsed.append(Detection(cls=cls_name, conf=conf, poly=np.array(poly), track_id=d.get("track_id", None), keypoints=kpts))
         by_frame[frame_idx] = parsed
 
     if not by_frame:
@@ -144,11 +174,11 @@ class ActionTemplate:
         self,
         frames: List[List[Detection]],
         inherited_class_groups: Dict[str, List[str]],
-    ) -> Tuple[int, int, float, int]:
+    ) -> Tuple[int, int, float, int, Optional[set]]:
         phases = self.action.get("phases", [])
         timer_start_phase = int(self.action.get("timer_start_phase", 0))
         if not phases:
-            return -1, 0, 0.0, -1
+            return -1, 0, 0.0, -1, None
 
         class_groups = dict(inherited_class_groups)
         class_groups.update(self.global_cfg.get("class_groups", {}))
@@ -186,14 +216,14 @@ class ActionTemplate:
                         if (cursor - phase_start_cursor) <= self.phase_start_wait_frames:
                             cursor += 1
                             continue
-                        return actual_start_cursor, cursor, 0.0, timer_start_cursor
+                        return actual_start_cursor, cursor, 0.0, timer_start_cursor, None
                     missed_streak += 1
                     if missed_streak > grace:
-                        return actual_start_cursor, cursor, 0.0, timer_start_cursor
+                        return actual_start_cursor, cursor, 0.0, timer_start_cursor, None
                 cursor += 1
 
             if matched_frames < hold:
-                return actual_start_cursor, cursor, 0.0, timer_start_cursor
+                return actual_start_cursor, cursor, 0.0, timer_start_cursor, None
 
             # Bo qua chia cho consumed, chi can pass qua host frames se dat confidence tuyet doi
             phase_scores.append(1.0)
@@ -213,9 +243,9 @@ class ActionTemplate:
                 hand_track_ids = None
 
         if not self.verify_component(frames, actual_start_cursor, cursor, inherited_class_groups, hand_track_ids=hand_track_ids):
-            return actual_start_cursor, cursor, 0.0, timer_start_cursor
+            return actual_start_cursor, cursor, 0.0, timer_start_cursor, None
         
-        return actual_start_cursor, cursor, confidence, timer_start_cursor
+        return actual_start_cursor, cursor, confidence, timer_start_cursor, hand_track_ids
 
     def phase_met(
         self,
@@ -247,6 +277,31 @@ class ActionTemplate:
         right = min(len(frames), anchor_start_idx + 1)
         for idx in range(left, right):
             if self.phase_met(frames, idx, inherited_class_groups, phase_idx=0):
+                return idx
+        return None
+
+    def find_first_phase0_with_hands(
+        self,
+        frames: List[List[Detection]],
+        inherited_class_groups: Dict[str, List[str]],
+        hand_track_ids: set,
+        start_idx: int,
+        end_idx: int,
+    ) -> Optional[int]:
+        class_groups = dict(inherited_class_groups)
+        class_groups.update(self.global_cfg.get("class_groups", {}))
+        phases = self.action.get("phases", [])
+        if not phases:
+            return None
+        phase = phases[0]
+        conds = phase.get("conditions", [])
+        for idx in range(start_idx, min(end_idx, len(frames))):
+            filtered = [
+                d for d in frames[idx]
+                if d.cls != "hand" or d.track_id in hand_track_ids
+            ]
+            history_frames = frames[max(0, idx - 30):idx]
+            if all(evaluate_condition(filtered, c, class_groups, history_frames) for c in conds):
                 return idx
         return None
 
@@ -363,6 +418,8 @@ class DynamicSOPBuilder:
         _tuning = {k: v for k, v in _tuning.items() if v is not None}
 
         self.conf_threshold = conf_threshold if conf_threshold is not None else float(_tuning.get("conf_threshold", DEFAULT_TUNING["conf_threshold"]))
+        self.min_det_conf = float(_tuning.get("min_det_conf", DEFAULT_TUNING["min_det_conf"]))
+        self.min_match_frames = int(_tuning.get("min_match_frames", DEFAULT_TUNING["min_match_frames"]))
         self.max_window_frames = max_window_frames if max_window_frames is not None else int(_tuning.get("max_window_frames", DEFAULT_TUNING["max_window_frames"]))
         self.rearm_frames = int(_tuning.get("rearm_frames", DEFAULT_TUNING["rearm_frames"]))
         self.scan_stride = int(_tuning.get("scan_stride", DEFAULT_TUNING["scan_stride"]))
@@ -712,13 +769,16 @@ class DynamicSOPBuilder:
             thr = self.role_thresholds.get(role, self.conf_threshold)
             local: List[Dict[str, Any]] = []
             for start in range(0, len(frames), self.scan_stride):
-                start_rel, end_rel, conf, timer_rel = tmpl.try_match(
+                start_rel, end_rel, conf, timer_rel, hand_ids = tmpl.try_match(
                     frames[start : start + self.max_window_frames], inherited_groups
                 )
                 if end_rel <= 0 or conf < thr:
                     continue
                 end_abs = min(len(frames), start + end_rel)
                 semantic_start = start + start_rel + 1 if start_rel >= 0 else start + 1
+                match_duration = end_abs - semantic_start + 1
+                if match_duration < self.min_match_frames:
+                    continue
                 timer_start = start + timer_rel + 1 if timer_rel >= 0 else semantic_start
                 detected_comp = tmpl.get_detected_component()
                 if detected_comp is None and tmpl.base_id == TAKE_GASKET_ACTION_ID:
@@ -732,6 +792,7 @@ class DynamicSOPBuilder:
                         "end_frame": end_abs,
                         "confidence": round(conf, 4),
                         "detected_component": detected_comp,
+                        "hand_track_ids": hand_ids,
                     }
                 )
 
@@ -1058,7 +1119,7 @@ class DynamicSOPBuilder:
                     rematch_window = frames[
                         rematch_idx : rematch_idx + self.max_window_frames
                     ]
-                    start_rel, end_rel, conf, timer_rel = nxt_t.try_match(
+                    start_rel, end_rel, conf, timer_rel, _ = nxt_t.try_match(
                         rematch_window, inherited_groups
                     )
 
@@ -1085,8 +1146,39 @@ class DynamicSOPBuilder:
             cur["end_frame"] = max(cur_start, clipped_end)
         return out
 
+    def _refine_attach_timer_by_hand(
+        self,
+        sequence: List[Dict[str, Any]],
+        frames: List[List[Detection]],
+        inherited_groups: Dict[str, List[str]],
+    ) -> List[Dict[str, Any]]:
+        for i, item in enumerate(sequence):
+            tmpl: ActionTemplate = item["template"]
+            if tmpl.base_id not in ("attach_component", "attach_only"):
+                continue
+            attach_start = int(item["start_frame"])
+            prev_take_hand_ids: Optional[set] = None
+            for j in range(i - 1, -1, -1):
+                prev = sequence[j]
+                prev_tmpl: ActionTemplate = prev["template"]
+                if self._template_role(prev_tmpl) == "take" and int(prev["end_frame"]) < attach_start:
+                    prev_take_hand_ids = prev.get("hand_track_ids")
+                    break
+            if not prev_take_hand_ids:
+                continue
+            refined = tmpl.find_first_phase0_with_hands(
+                frames,
+                inherited_groups,
+                prev_take_hand_ids,
+                int(item["start_frame"]) - 1,
+                int(item["end_frame"]),
+            )
+            if refined is not None:
+                item["timer_start_frame"] = refined + 1
+        return sequence
+
     def infer_from_detections(self, detections_jsonl: Path) -> Dict[str, Any]:
-        frames = load_detection_frames(detections_jsonl)
+        frames = load_detection_frames(detections_jsonl, min_conf=self.min_det_conf)
         if not frames:
             raise ValueError(f"No valid detections in: {detections_jsonl}")
 
@@ -1096,6 +1188,9 @@ class DynamicSOPBuilder:
         matched_sequence = self._augment_intermediate_candidates(matched_sequence, candidates)
         matched_sequence = self._attach_return_candidate(matched_sequence, candidates)
         matched_sequence = self._trim_generic_attach_before_next_take(
+            matched_sequence, frames, inherited_groups
+        )
+        matched_sequence = self._refine_attach_timer_by_hand(
             matched_sequence, frames, inherited_groups
         )
 
@@ -1173,7 +1268,9 @@ class DynamicSOPBuilder:
             eff_start = int(item.get("timer_start_frame", item.get("semantic_start_frame", item["start_frame"])))
             if matches_meta:
                 prev_end = int(matches_meta[-1]["end_frame"])
-                eff_start = max(eff_start, prev_end + 1)
+                candidate_start = max(eff_start, prev_end + 1)
+                if candidate_start <= int(item["end_frame"]):
+                    eff_start = candidate_start
             eff_start = min(eff_start, int(item["end_frame"]))
             matches_meta.append(
                 {
@@ -1280,8 +1377,9 @@ def render_video_with_boxes_and_timer(
     out_path: Path,
     detections_jsonl: Path,
     timeline_rows: List[dict],
+    min_conf: float = 0.0,
 ) -> None:
-    frames_dets = load_detection_frames(detections_jsonl)
+    frames_dets = load_detection_frames(detections_jsonl, min_conf=min_conf)
 
     cap = cv2.VideoCapture(str(video_path))
     if not cap.isOpened():
@@ -1437,7 +1535,7 @@ def main() -> None:
             else output_path.with_name(f"{output_path.stem}_timer_overlay.mp4")
         )
         timeline_rows = builder.build_timeline_rows(inferred)
-        render_video_with_boxes_and_timer(video_path, overlay_path, detections_path, timeline_rows)
+        render_video_with_boxes_and_timer(video_path, overlay_path, detections_path, timeline_rows, min_conf=0.25)
         print(f"✅ Timer overlay video written: {overlay_path}")
 
 

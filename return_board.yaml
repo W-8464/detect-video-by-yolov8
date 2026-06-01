@@ -31,7 +31,7 @@ actions:
                 max_thr: 0.88
               - type: "missing"
                 subject: "Target"
-        hold_frames: 2
+        hold_frames: 15
         grace_miss: 30
       - id: "board_missing_from_camera"
         conditions:

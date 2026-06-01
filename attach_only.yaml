@@ -12,7 +12,7 @@ actions:
           - type: "contain"
             subject: "hand"
             target: "Target"
-            min_thr: 0.40
+            min_thr: 0.30
           - type: "stationary"
             subject: "Target"
             history_len: 15
@@ -21,10 +21,19 @@ actions:
         grace_miss: 15
       - id: "component_placed_on_target"
         conditions:
-          - type: "contain"
-            subject: "Component"
-            target: "Target"
-            min_thr: 0.30
+          - type: "or"
+            sub_conditions:
+              - type: "contain"
+                subject: "Component"
+                target: "Target"
+                min_thr: 0.20
+              - type: "history_exists"
+                subject: "Component"
+                history_len: 10
+                min_frames: 1
+          # - type: "release"
+          #   subject: "hand"
+          #   max_thr: 0.35
         hold_frames: 3
         grace_miss: 15
       - id: "hand_leaves_target_or_enters_container"
@@ -38,8 +47,8 @@ actions:
               - type: "contain"
                 subject: "hand"
                 target: "Container"
-                min_thr: 0.35
-        hold_frames: 4
+                min_thr: 0.40
+        hold_frames: 10
         grace_miss: 15
 
     score_rules:

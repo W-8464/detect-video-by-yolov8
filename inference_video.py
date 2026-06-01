@@ -13,7 +13,7 @@ import yaml
 ROOT = Path(__file__).resolve().parent
 full_model_path = str((ROOT / 'runs/obb/action_model_v10/weights/best.pt').resolve())
 roi_model_path = str((ROOT / 'runs/obb/action_model_roi_v5/weights/best.pt').resolve())
-pose_model_path = str((ROOT / 'runs/pose/pose_hand_v6/weights/best.pt').resolve())
+pose_model_path = str((ROOT / 'runs/pose/pose_hand_v7/weights/best.pt').resolve())
 
 full_model = YOLO(full_model_path)
 roi_model = YOLO(roi_model_path)
@@ -52,7 +52,15 @@ def _load_class_mapping():
     roi_small_names = global_cfg.get("roi_small_classes", [])
     ROI_SMALL_CLASSES = {CLASS_NAME_TO_ID[n] for n in roi_small_names if n in CLASS_NAME_TO_ID}
 
-    ROI_PAD = float(global_cfg.get("tuning", {}).get("roi_pad", 1.6))
+    tuning = global_cfg.get("tuning", {})
+    ROI_PAD = float(tuning.get("roi_pad", 1.6))
+
+    pose_cfg = tuning.get("pose", {})
+    POSE_IMGSZ = int(pose_cfg.get("imgsz", 416))
+    POSE_CONF = float(pose_cfg.get("conf", 0.25))
+    POSE_IOU = float(pose_cfg.get("iou", 0.5))
+    POSE_KPTS_SMOOTH_ALPHA = float(pose_cfg.get("kpts_smooth_alpha", 0.4))
+    POSE_KPTS_DISPLAY_CONF = float(pose_cfg.get("kpts_display_conf", 0.3))
 
     return (
         CLASS_ID_TO_NAME,
@@ -61,6 +69,11 @@ def _load_class_mapping():
         ROI_TO_FULL_CLASS,
         ROI_SMALL_CLASSES,
         ROI_PAD,
+        POSE_IMGSZ,
+        POSE_CONF,
+        POSE_IOU,
+        POSE_KPTS_SMOOTH_ALPHA,
+        POSE_KPTS_DISPLAY_CONF,
     )
 
 
@@ -71,6 +84,11 @@ def _load_class_mapping():
     ROI_TO_FULL_CLASS,
     ROI_SMALL_CLASSES,
     ROI_PAD,
+    POSE_IMGSZ,
+    POSE_CONF,
+    POSE_IOU,
+    POSE_KPTS_SMOOTH_ALPHA,
+    POSE_KPTS_DISPLAY_CONF,
 ) = _load_class_mapping()
 
 HAND_CLS = CLASS_NAME_TO_ID.get("hand", 0)
@@ -93,7 +111,7 @@ def parse_args():
     parser.add_argument(
         "--input",
         type=str,
-        default=str((ROOT / "datasets/xb10_2_8.mp4").resolve()),
+        default=str((ROOT / "datasets/xb10_1_13.mp4").resolve()),
         help="Input video path",
     )
     parser.add_argument(
@@ -188,7 +206,7 @@ def draw_polys_smart(frame, detections, names_by_cls):
             for kp in kpts:
                 kx, ky = int(kp[0]), int(kp[1])
                 conf_kp = kp[2] if len(kp) > 2 else 1.0
-                if conf_kp > 0.2: # Giảm ngưỡng hiển thị keypoint
+                if conf_kp > POSE_KPTS_DISPLAY_CONF:
                     cv2.circle(canvas, (kx, ky), 4, (0, 255, 0), -1)
             
             # Draw skeleton
@@ -199,7 +217,7 @@ def draw_polys_smart(frame, detections, names_by_cls):
                     p2 = kpts[p2_idx]
                     conf1 = p1[2] if len(p1) > 2 else 1.0
                     conf2 = p2[2] if len(p2) > 2 else 1.0
-                    if conf1 > 0.2 and conf2 > 0.2: # Giảm ngưỡng hiển thị skeleton
+                    if conf1 > POSE_KPTS_DISPLAY_CONF and conf2 > POSE_KPTS_DISPLAY_CONF:
                         cv2.line(canvas, (int(p1[0]), int(p1[1])), (int(p2[0]), int(p2[1])), (0, 255, 255), 2)
 
         if best_idx.get(cls_id) != i:
@@ -323,6 +341,9 @@ det_file = open(detections_output_path, "w", encoding="utf-8")
 roi_history = {}  # track_id -> (rx1, ry1, rx2, ry2)
 ROI_SMOOTH_ALPHA = 0.45
 
+# Smooth keypoints per track_id để giảm giật keypoints giữa các frame
+kpts_history = {}  # track_id -> (N, 3) numpy array [x, y, conf]
+
 while True:
     success, frame = cap.read()
     if not success:
@@ -368,7 +389,9 @@ while True:
             if cls_id in (HAND_CLS, TWEEZERS_CLS):
                 aabb = poly_aabb(poly)
                 rx1, ry1, rx2, ry2 = expand_clip_aabb(aabb, width, height, ROI_PAD)
-                # Smooth ROI để crop window ổn định → pose model ổn định
+                # Giữ raw ROI cho pose inference (không smoothing → keypoint khớp hand box)
+                raw_rx1, raw_ry1, raw_rx2, raw_ry2 = rx1, ry1, rx2, ry2
+                # Smooth ROI cho ROI model (shielding/gasket) để crop window ổn định
                 if track_id is not None and track_id in roi_history:
                     prx1, pry1, prx2, pry2 = roi_history[track_id]
                     a = ROI_SMOOTH_ALPHA
@@ -378,17 +401,15 @@ while True:
                     ry2 = int(a * ry2 + (1 - a) * pry2)
                 if track_id is not None:
                     roi_history[track_id] = (rx1, ry1, rx2, ry2)
-                hand_rois.append((rx1, ry1, rx2, ry2, track_id))
+                hand_rois.append((rx1, ry1, rx2, ry2, raw_rx1, raw_ry1, raw_rx2, raw_ry2, track_id))
 
     # Stage 2: chạy ROI model trên crop để detect shielding/gasket "in-hand"
-    for rx1, ry1, rx2, ry2, parent_id in hand_rois:
-        crop = frame[ry1:ry2, rx1:rx2]
-        if crop.size == 0:
+    for rx1, ry1, rx2, ry2, raw_rx1, raw_ry1, raw_rx2, raw_ry2, parent_id in hand_rois:
+        crop_smoothed = frame[ry1:ry2, rx1:rx2]
+        if crop_smoothed.size == 0:
             continue
 
-        # --- Pose Inference ---
-        # Chạy pose cho ROI nếu nó thuộc về class 'hand'
-        # Tìm detection tương ứng trong list hiện tại
+        # --- Pose Inference (dùng raw crop, không smoothing → keypoint khớp hand box) ---
         target_hand_det = None
         for d in detections:
             if d.get("track_id") == parent_id and d["cls_id"] == HAND_CLS:
@@ -396,22 +417,55 @@ while True:
                 break
         
         if target_hand_det is not None:
-            pose_results = pose_model.predict(crop, imgsz=416, conf=0.1, iou=0.5, verbose=False)
-            pose_res = pose_results[0]
-            if pose_res.keypoints is not None and len(pose_res.keypoints) > 0:
-                # Lấy keypoints của bàn tay có confidence cao nhất trong crop
-                # YOLOv8 pose data shape: (N, 16, 3) -> [x, y, conf]
-                kpts_data = pose_res.keypoints.data[0].cpu().numpy()
-                
-                # Chuyển về tọa độ full-frame
-                kpts_full = kpts_data.copy()
-                kpts_full[:, 0] += float(rx1)
-                kpts_full[:, 1] += float(ry1)
-                
-                target_hand_det["keypoints"] = kpts_full
+            crop_raw = frame[raw_ry1:raw_ry2, raw_rx1:raw_rx2]
+            if crop_raw.size > 0:
+                crop_h, crop_w = crop_raw.shape[:2]
+                raw_imgsz = max(320, min(POSE_IMGSZ, max(crop_h, crop_w)))
+                dynamic_imgsz = int(round(raw_imgsz / 32.0) * 32)
 
-        # --- ROI OBB Inference ---
-        roi_results = roi_model.predict(crop, conf=0.25, iou=0.4, verbose=False)
+                pose_results = pose_model.predict(
+                    crop_raw, imgsz=dynamic_imgsz, conf=POSE_CONF, iou=POSE_IOU, verbose=False
+                )
+                pose_res = pose_results[0]
+                if pose_res.keypoints is not None and len(pose_res.keypoints) > 0:
+                    kpts_all = pose_res.keypoints.data.cpu().numpy()
+                    box_all = pose_res.boxes
+
+                    crop_cx, crop_cy = crop_w / 2.0, crop_h / 2.0
+                    best_idx = 0
+                    if len(kpts_all) > 1 and box_all is not None:
+                        boxes_xyxy = box_all.xyxy.cpu().numpy()
+                        best_dist = float("inf")
+                        for m in range(len(kpts_all)):
+                            bx_cx = (boxes_xyxy[m][0] + boxes_xyxy[m][2]) / 2.0
+                            bx_cy = (boxes_xyxy[m][1] + boxes_xyxy[m][3]) / 2.0
+                            dist = (bx_cx - crop_cx) ** 2 + (bx_cy - crop_cy) ** 2
+                            if dist < best_dist:
+                                best_dist = dist
+                                best_idx = m
+
+                    kpts_data = kpts_all[best_idx]
+                    kpts_full = kpts_data.copy()
+                    kpts_full[:, 0] += float(raw_rx1)
+                    kpts_full[:, 1] += float(raw_ry1)
+
+                    if parent_id is not None and parent_id in kpts_history:
+                        prev_kpts = kpts_history[parent_id]
+                        a = POSE_KPTS_SMOOTH_ALPHA
+                        valid_mask = (kpts_full[:, 2] > 0.0) & (prev_kpts[:, 2] > 0.0)
+                        kpts_full[valid_mask, 0] = (
+                            a * kpts_full[valid_mask, 0] + (1 - a) * prev_kpts[valid_mask, 0]
+                        )
+                        kpts_full[valid_mask, 1] = (
+                            a * kpts_full[valid_mask, 1] + (1 - a) * prev_kpts[valid_mask, 1]
+                        )
+                    if parent_id is not None:
+                        kpts_history[parent_id] = kpts_full.copy()
+
+                    target_hand_det["keypoints"] = kpts_full
+
+        # --- ROI OBB Inference (dùng smoothed crop) ---
+        roi_results = roi_model.predict(crop_smoothed, conf=0.25, iou=0.4, verbose=False)
         roi_res = roi_results[0]
         if roi_res.obb is None or roi_res.obb.cls is None or roi_res.obb.xyxyxyxy is None:
             continue
@@ -439,11 +493,14 @@ while True:
                 }
             )
 
-    # Dọn dẹp roi_history cho track không còn xuất hiện
+    # Dọn dẹp roi_history và kpts_history cho track không còn xuất hiện
     active_ids = {d.get("track_id") for d in detections if d.get("track_id") is not None}
     for tid in list(roi_history.keys()):
         if tid not in active_ids:
             del roi_history[tid]
+    for tid in list(kpts_history.keys()):
+        if tid not in active_ids:
+            del kpts_history[tid]
 
     # Giảm rối: với shielding/gasket, giữ top-k theo mỗi track_id (tay/nhíp)
     TOPK_PER_PARENT = 3

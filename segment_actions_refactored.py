@@ -16,6 +16,7 @@ class Detection:
     conf: float
     poly: np.ndarray
     track_id: Optional[int] = None
+    keypoints: Optional[np.ndarray] = None
 
 def aabb(poly: np.ndarray) -> Tuple[float, float, float, float]:
     return float(poly[:, 0].min()), float(poly[:, 1].min()), float(poly[:, 0].max()), float(poly[:, 1].max())
@@ -54,7 +55,9 @@ def load_detections_jsonl(path: Path, min_conf: float) -> Dict[int, List[Detecti
             poly = d.get("poly", None)
             track_id = d.get("track_id", None)
             if not cls or not poly or conf < min_conf: continue
-            by_frame[frame].append(Detection(cls, conf, np.array(poly), track_id=track_id))
+            kpts_raw = d.get("keypoints", None)
+            kpts = np.array(kpts_raw, dtype=np.float32) if kpts_raw else None
+            by_frame[frame].append(Detection(cls, conf, np.array(poly), track_id=track_id, keypoints=kpts))
     return by_frame
 
 def cut_clip(video_path: Path, out_path: Path, start_frame: int, end_frame: int) -> None:
@@ -77,16 +80,16 @@ def cut_clip(video_path: Path, out_path: Path, start_frame: int, end_frame: int)
     writer.release()
     cap.release()
 
-def evaluate_condition(dets: List[Detection], cond: dict, class_groups: dict = None, history_frames: List[List[Detection]] = None) -> bool:
+def evaluate_condition(dets: List[Detection], cond: dict, class_groups: dict = None, history_frames: List[List[Detection]] = None, locked_track_id: Optional[int] = None) -> bool:
     class_groups = class_groups or {}
     
     c_type = cond.get("type", "")
     if c_type == "or":
         sub_conds = cond.get("sub_conditions", [])
-        return any(evaluate_condition(dets, sc, class_groups, history_frames) for sc in sub_conds)
+        return any(evaluate_condition(dets, sc, class_groups, history_frames, locked_track_id) for sc in sub_conds)
     if c_type == "and":
         sub_conds = cond.get("sub_conditions", [])
-        return all(evaluate_condition(dets, sc, class_groups, history_frames) for sc in sub_conds)
+        return all(evaluate_condition(dets, sc, class_groups, history_frames, locked_track_id) for sc in sub_conds)
 
     def get_classes(name: str) -> List[str]:
         if not name: return []
@@ -102,6 +105,8 @@ def evaluate_condition(dets: List[Detection], cond: dict, class_groups: dict = N
         return not any(d.cls in subj_classes for d in dets)
         
     subjs = sorted([d for d in dets if d.cls in subj_classes], key=lambda x: x.conf, reverse=True)
+    if locked_track_id is not None:
+        subjs = [d for d in subjs if d.track_id == locked_track_id]
     tgts = sorted([d for d in dets if d.cls in tgt_classes], key=lambda x: x.conf, reverse=True)
 
     if c_type in ("not_contain", "not_iou"):
@@ -115,6 +120,15 @@ def evaluate_condition(dets: List[Detection], cond: dict, class_groups: dict = N
         if not past_frames: return True
         missing_count = sum(1 for past_dets in past_frames if not any(d.cls in subj_classes for d in past_dets))
         return missing_count >= int(cond.get("min_missing_frames", history_len))
+
+    if c_type == "history_exists":
+        if not history_frames: return False
+        history_len = int(cond.get("history_len", 10))
+        min_frames = int(cond.get("min_frames", 1))
+        past_frames = history_frames[-history_len:] if history_len > 0 else history_frames
+        if not past_frames: return False
+        exists_count = sum(1 for past_dets in past_frames if any(d.cls in subj_classes for d in past_dets))
+        return exists_count >= min_frames
 
     if c_type == "stationary":
         if not subjs: return False
@@ -174,6 +188,76 @@ def evaluate_condition(dets: List[Detection], cond: dict, class_groups: dict = N
                     has_moved = False
                     break
             if has_moved:
+                return True
+        return False
+
+    # ── Keypoint-based conditions ──────────────────────────────────────────
+    # Keypoint indices (16 total):
+    #   0: Wrist
+    #   1,2,3: Thumb (CMC, MCP, Tip)
+    #   4,5,6: Index (MCP, PIP, Tip)
+    #   7,8,9: Middle (MCP, PIP, Tip)
+    #   10,11,12: Ring (MCP, PIP, Tip)
+    #   13,14,15: Pinky (MCP, PIP, Tip)
+    FINGERTIP_IDS = [3, 6, 9, 12, 15]
+    WRIST_ID = 0
+    MIDDLE_MCP_ID = 7
+    THUMB_TIP_ID = 3
+    INDEX_TIP_ID = 6
+
+    def _grasp_score(kpts: np.ndarray) -> float:
+        """0.0 = fully open, 1.0 = fully closed fist.
+        Normalized by wrist-to-middle-mcp distance for scale invariance."""
+        if kpts.shape[0] <= max(FINGERTIP_IDS):
+            return 0.0
+        wrist = kpts[WRIST_ID, :2]
+        ref = np.linalg.norm(kpts[MIDDLE_MCP_ID, :2] - wrist)
+        if ref < 1.0:
+            return 0.0
+        dists = []
+        for fid in FINGERTIP_IDS:
+            conf = kpts[fid, 2] if kpts.shape[1] > 2 else 1.0
+            if conf < 0.15:
+                continue
+            d = np.linalg.norm(kpts[fid, :2] - wrist) / ref
+            dists.append(d)
+        if not dists:
+            return 0.0
+        avg = np.mean(dists)
+        return float(np.clip(1.0 - (avg - 0.6) / 1.2, 0.0, 1.0))
+
+    if c_type == "grasp":
+        if not subjs:
+            return False
+        min_thr = float(cond.get("min_thr", 0.5))
+        for s in subjs:
+            if s.keypoints is not None and _grasp_score(s.keypoints) >= min_thr:
+                return True
+        return False
+
+    if c_type == "release":
+        if not subjs:
+            return False
+        max_thr = float(cond.get("max_thr", 0.35))
+        for s in subjs:
+            if s.keypoints is not None and _grasp_score(s.keypoints) <= max_thr:
+                return True
+        return False
+
+    if c_type == "pinch":
+        if not subjs:
+            return False
+        max_thr = float(cond.get("max_thr", 50.0))
+        for s in subjs:
+            kpts = s.keypoints
+            if kpts is None or kpts.shape[0] <= max(THUMB_TIP_ID, INDEX_TIP_ID):
+                continue
+            c1 = kpts[THUMB_TIP_ID, 2] if kpts.shape[1] > 2 else 1.0
+            c2 = kpts[INDEX_TIP_ID, 2] if kpts.shape[1] > 2 else 1.0
+            if c1 < 0.15 or c2 < 0.15:
+                continue
+            d = np.linalg.norm(kpts[THUMB_TIP_ID, :2] - kpts[INDEX_TIP_ID, :2])
+            if d <= max_thr:
                 return True
         return False
 
@@ -421,6 +505,7 @@ def main():
         current_phase_idx = 0
         streak = 0
         miss_count = 0
+        locked_hand_track_id = None
         
         start_frame = None
         end_frame = None
@@ -454,13 +539,26 @@ def main():
             if conds:
                 h_start = max(0, f - 30)
                 hf_list = [by_frame.get(hf, []) for hf in range(h_start, f)]
-                phase_met = all(evaluate_condition(by_frame.get(f, []), c, class_groups, history_frames=hf_list) for c in conds)
+                phase_met = all(evaluate_condition(by_frame.get(f, []), c, class_groups, history_frames=hf_list, locked_track_id=locked_hand_track_id) for c in conds)
                 
             if phase_met:
                 streak += 1
                 miss_count = 0
                 if start_frame is None and current_phase_idx == 0:
                     start_frame = f
+                    hand_dets = [d for d in by_frame.get(f, []) if d.cls == "hand"]
+                    tray_dets = [d for d in by_frame.get(f, []) if d.cls in class_groups.get("Container", ["tray"])]
+                    best_tid = None
+                    best_ratio = 0.0
+                    for h in hand_dets:
+                        h_box = aabb(h.poly)
+                        for t in tray_dets:
+                            t_box = aabb(t.poly)
+                            ratio = contain_ratio_aabb(h_box, t_box)
+                            if ratio > best_ratio:
+                                best_ratio = ratio
+                                best_tid = h.track_id
+                    locked_hand_track_id = best_tid
                 
                 hold = int(phase.get("hold_frames", 1))
                 if streak >= hold:

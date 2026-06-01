@@ -1,0 +1,12 @@
+{
+  version: 2,
+  mediaFileName: 'xb10_2_8_timer_overlay.mp4',
+  cutSegments: [
+    {
+      start: 0,
+      end: 24.493629629629627,
+      name: '',
+      selected: true,
+    },
+  ],
+}

@@ -39,7 +39,7 @@ global:
   tuning:
     conf_threshold: 0.55
     max_window_frames: 300
-    rearm_frames: 12
+    rearm_frames: 5
     phase_start_wait_frames: 220
     semantic_lookback_frames: 300
     attach_anchor_max_gap_frames: 150
@@ -48,3 +48,9 @@ global:
     scan_stride: 4
     roi_pad: 1.6
     return_role_threshold_offset: 0.1
+    pose:
+      imgsz: 416
+      conf: 0.25
+      iou: 0.5
+      kpts_smooth_alpha: 0.7
+      kpts_display_conf: 0.3
