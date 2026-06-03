@@ -52,6 +52,9 @@ export class VideoProcessorComponent {
       // Simulate real progress or parse Http progress event
       if (event.type === 1) { // HttpEventType.UploadProgress
         this.uploadProgress = Math.round(100 * event.loaded / event.total);
+        if (this.uploadProgress === 100) {
+            this.processingState = 'processing';
+        }
       } else if (event.type === 4) { // HttpEventType.Response
         this.processingState = 'done';
         this.resultVideoUrl = event.body.resultUrl;

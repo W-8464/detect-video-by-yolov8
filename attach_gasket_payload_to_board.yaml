@@ -1,0 +1,67 @@
+global:
+  handoff_prev_end_to_next_start: true
+  class_groups:
+    GasketPayload:
+      - "shielding"
+      - "gasket"
+
+actions:
+  - id: attach_shielding_and_gasket
+    description: "Nhóm tác vụ đặc thù: Gắn cụm Shielding đã dán Gasket lên Board."
+    max_action_frames: 180
+    timer_start_phase: 1
+    phases:
+      - id: "hand_moves_payload_to_board"
+        conditions:
+          - type: "contain"
+            subject: "hand"
+            target: "Target"
+            min_thr: 0.12
+          - type: "not_iou"
+            subject: "tweezers"
+            target: "shielding"
+            max_thr: 0.05
+          - type: "stationary"
+            subject: "Target"
+            history_len: 12
+            min_iou: 0.75
+        hold_frames: 8
+        grace_miss: 10
+      - id: "payload_placed_on_board"
+        conditions:
+          - type: "or"
+            sub_conditions:
+              - type: "contain"
+                subject: "GasketPayload"
+                target: "Target"
+                min_thr: 0.15
+              - type: "history_exists"
+                subject: "GasketPayload"
+                history_len: 20
+                min_frames: 1
+        hold_frames: 3
+        grace_miss: 10
+      - id: "hand_leaves_shielding"
+        conditions:
+          - type: "exists"
+            subject: "shielding"
+            min_count: 1
+          - type: "not_iou"
+            subject: "hand"
+            target: "shielding"
+            max_thr: 0.005
+        hold_frames: 8
+        grace_miss: 35
+
+    score_rules:
+      spatial:
+        subject: "hand"
+        target: "Target"
+        weight: 1.0
+      temporal:
+        subject: "hand"
+        target: "Target"
+        threshold: 0.20
+        min_frames: 4
+        max_frames: 50
+        weight: 0.5

@@ -12,11 +12,11 @@ actions:
           - type: "contain"
             subject: "hand"
             target: "Target"
-            min_thr: 0.30
+            min_thr: 0.20
           - type: "stationary"
             subject: "Target"
             history_len: 15
-            min_iou: 0.85
+            min_iou: 0.75
         hold_frames: 3
         grace_miss: 15
       - id: "component_placed_on_target"

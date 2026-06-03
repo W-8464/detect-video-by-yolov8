@@ -2,7 +2,7 @@ global:
   handoff_prev_end_to_next_start: true
 
 actions:
-  - id: attach_gasket_to_shielding
+  - id: apply_gasket_to_shielding
     description: "Dac thu: Gasket duoc dan vao Shielding khi hai lieu chong len nhau."
     max_action_frames: 0
     timer_start_phase: 0
@@ -26,6 +26,14 @@ actions:
           - type: "contain"
             subject: "gasket"
             target: "shielding"
-            min_thr: 0.20
+            min_thr: 0.15
         hold_frames: 2
+        grace_miss: 10
+      - id: "tweezers_leaves_shielding"
+        conditions:
+          - type: "not_iou"
+            subject: "tweezers"
+            target: "shielding"
+            max_thr: 0.01
+        hold_frames: 3
         grace_miss: 30

@@ -181,11 +181,11 @@ actions:
     - type: contain
       subject: hand
       target: Target
-      min_thr: 0.3
+      min_thr: 0.2
     - type: stationary
       subject: Target
       history_len: 15
-      min_iou: 0.85
+      min_iou: 0.75
     hold_frames: 3
     grace_miss: 15
   - id: component_placed_on_target
@@ -288,43 +288,6 @@ actions:
       min_hits: 3
       weight: 3.0
       prerequisite: true
-- id: board_back_to_conveyor_1
-  description: 'Nhóm tác vụ độc lập: Lấy board đặt lại chuyền. (Chỉ tính giờ từ khi
-    board TỪ TRONG jig bắt đầu bị rút ra) (lần 1)'
-  max_action_frames: 0
-  timer_start_phase: 1
-  phases:
-  - id: board_stable_in_jig_or_static
-    conditions:
-    - type: or
-      sub_conditions:
-      - type: contain
-        subject: Target
-        target: jig
-        min_thr: 0.9
-      - type: stationary
-        subject: Target
-        history_len: 10
-        min_iou: 0.85
-    hold_frames: 30
-  - id: board_starts_leaving_stable_state
-    conditions:
-    - type: or
-      sub_conditions:
-      - type: not_contain
-        subject: Target
-        target: jig
-        max_thr: 0.88
-      - type: missing
-        subject: Target
-    hold_frames: 15
-    grace_miss: 30
-  - id: board_missing_from_camera
-    conditions:
-    - type: missing
-      subject: Target
-    hold_frames: 4
-    grace_miss: 10
 - id: attach_gasket_2
   description: 'Nhóm tác vụ độc lập: Gắn linh kiện lên đích. (lần 2)'
   max_action_frames: 180
@@ -335,11 +298,11 @@ actions:
     - type: contain
       subject: hand
       target: Target
-      min_thr: 0.3
+      min_thr: 0.2
     - type: stationary
       subject: Target
       history_len: 15
-      min_iou: 0.85
+      min_iou: 0.75
     hold_frames: 3
     grace_miss: 15
   - id: component_placed_on_target
@@ -452,11 +415,11 @@ actions:
     - type: contain
       subject: hand
       target: Target
-      min_thr: 0.3
+      min_thr: 0.2
     - type: stationary
       subject: Target
       history_len: 15
-      min_iou: 0.85
+      min_iou: 0.75
     hold_frames: 3
     grace_miss: 15
   - id: component_placed_on_target
@@ -499,6 +462,43 @@ actions:
       min_frames: 5
       max_frames: 40
       weight: 0.5
+- id: board_back_to_conveyor_1
+  description: 'Nhóm tác vụ độc lập: Lấy board đặt lại chuyền. (Chỉ tính giờ từ khi
+    board TỪ TRONG jig bắt đầu bị rút ra) (lần 1)'
+  max_action_frames: 0
+  timer_start_phase: 1
+  phases:
+  - id: board_stable_in_jig_or_static
+    conditions:
+    - type: or
+      sub_conditions:
+      - type: contain
+        subject: Target
+        target: jig
+        min_thr: 0.9
+      - type: stationary
+        subject: Target
+        history_len: 10
+        min_iou: 0.85
+    hold_frames: 30
+  - id: board_starts_leaving_stable_state
+    conditions:
+    - type: or
+      sub_conditions:
+      - type: not_contain
+        subject: Target
+        target: jig
+        max_thr: 0.88
+      - type: missing
+        subject: Target
+    hold_frames: 15
+    grace_miss: 30
+  - id: board_missing_from_camera
+    conditions:
+    - type: missing
+      subject: Target
+    hold_frames: 4
+    grace_miss: 10
 - id: put_board_into_jig_2
   description: 'Nhóm tác vụ độc lập: Đặt board vào jig. Bắt đầu khi board xuất hiện,
     hoàn thành khi board nằm gọn. Sau khi hoàn thành sẽ lưu CSV và đếm lại từ đầu.
@@ -590,63 +590,6 @@ actions:
       min_hits: 3
       weight: 3.0
       prerequisite: true
-- id: attach_shielding_4
-  description: 'Nhóm tác vụ độc lập: Gắn linh kiện lên đích. (lần 4)'
-  max_action_frames: 180
-  timer_start_phase: 1
-  phases:
-  - id: hand_moves_to_target
-    conditions:
-    - type: contain
-      subject: hand
-      target: Target
-      min_thr: 0.3
-    - type: stationary
-      subject: Target
-      history_len: 15
-      min_iou: 0.85
-    hold_frames: 3
-    grace_miss: 15
-  - id: component_placed_on_target
-    conditions:
-    - type: or
-      sub_conditions:
-      - type: contain
-        subject: Component
-        target: Target
-        min_thr: 0.2
-      - type: history_exists
-        subject: Component
-        history_len: 10
-        min_frames: 1
-    hold_frames: 3
-    grace_miss: 15
-  - id: hand_leaves_target_or_enters_container
-    conditions:
-    - type: or
-      sub_conditions:
-      - type: not_contain
-        subject: hand
-        target: Target
-        max_thr: 0.2
-      - type: contain
-        subject: hand
-        target: Container
-        min_thr: 0.4
-    hold_frames: 10
-    grace_miss: 15
-  score_rules:
-    spatial:
-      subject: hand
-      target: Target
-      weight: 1.0
-    temporal:
-      subject: hand
-      target: Target
-      threshold: 0.3
-      min_frames: 5
-      max_frames: 40
-      weight: 0.5
 - id: take_shielding_5
   description: 'Nhóm tác vụ độc lập: Lấy 1 kiện từ khay kéo ra khỏi khay. (lần 5)'
   max_action_frames: 0
@@ -707,8 +650,8 @@ actions:
       min_hits: 3
       weight: 3.0
       prerequisite: true
-- id: attach_shielding_5
-  description: 'Nhóm tác vụ độc lập: Gắn linh kiện lên đích. (lần 5)'
+- id: attach_shielding_and_shielding_4_and_5
+  description: 'Nhóm tác vụ độc lập: Gắn linh kiện lên đích. (lần 4_and_5)'
   max_action_frames: 180
   timer_start_phase: 1
   phases:
@@ -717,11 +660,11 @@ actions:
     - type: contain
       subject: hand
       target: Target
-      min_thr: 0.3
+      min_thr: 0.2
     - type: stationary
       subject: Target
       history_len: 15
-      min_iou: 0.85
+      min_iou: 0.75
     hold_frames: 3
     grace_miss: 15
   - id: component_placed_on_target
@@ -824,43 +767,6 @@ actions:
       min_hits: 3
       weight: 3.0
       prerequisite: true
-- id: board_back_to_conveyor_2
-  description: 'Nhóm tác vụ độc lập: Lấy board đặt lại chuyền. (Chỉ tính giờ từ khi
-    board TỪ TRONG jig bắt đầu bị rút ra) (lần 2)'
-  max_action_frames: 0
-  timer_start_phase: 1
-  phases:
-  - id: board_stable_in_jig_or_static
-    conditions:
-    - type: or
-      sub_conditions:
-      - type: contain
-        subject: Target
-        target: jig
-        min_thr: 0.9
-      - type: stationary
-        subject: Target
-        history_len: 10
-        min_iou: 0.85
-    hold_frames: 30
-  - id: board_starts_leaving_stable_state
-    conditions:
-    - type: or
-      sub_conditions:
-      - type: not_contain
-        subject: Target
-        target: jig
-        max_thr: 0.88
-      - type: missing
-        subject: Target
-    hold_frames: 15
-    grace_miss: 30
-  - id: board_missing_from_camera
-    conditions:
-    - type: missing
-      subject: Target
-    hold_frames: 4
-    grace_miss: 10
 - id: attach_shielding_6
   description: 'Nhóm tác vụ độc lập: Gắn linh kiện lên đích. (lần 6)'
   max_action_frames: 180
@@ -871,11 +777,11 @@ actions:
     - type: contain
       subject: hand
       target: Target
-      min_thr: 0.3
+      min_thr: 0.2
     - type: stationary
       subject: Target
       history_len: 15
-      min_iou: 0.85
+      min_iou: 0.75
     hold_frames: 3
     grace_miss: 15
   - id: component_placed_on_target
@@ -918,6 +824,43 @@ actions:
       min_frames: 5
       max_frames: 40
       weight: 0.5
+- id: board_back_to_conveyor_2
+  description: 'Nhóm tác vụ độc lập: Lấy board đặt lại chuyền. (Chỉ tính giờ từ khi
+    board TỪ TRONG jig bắt đầu bị rút ra) (lần 2)'
+  max_action_frames: 0
+  timer_start_phase: 1
+  phases:
+  - id: board_stable_in_jig_or_static
+    conditions:
+    - type: or
+      sub_conditions:
+      - type: contain
+        subject: Target
+        target: jig
+        min_thr: 0.9
+      - type: stationary
+        subject: Target
+        history_len: 10
+        min_iou: 0.85
+    hold_frames: 30
+  - id: board_starts_leaving_stable_state
+    conditions:
+    - type: or
+      sub_conditions:
+      - type: not_contain
+        subject: Target
+        target: jig
+        max_thr: 0.88
+      - type: missing
+        subject: Target
+    hold_frames: 15
+    grace_miss: 30
+  - id: board_missing_from_camera
+    conditions:
+    - type: missing
+      subject: Target
+    hold_frames: 4
+    grace_miss: 10
 - id: put_board_into_jig_3
   description: 'Nhóm tác vụ độc lập: Đặt board vào jig. Bắt đầu khi board xuất hiện,
     hoàn thành khi board nằm gọn. Sau khi hoàn thành sẽ lưu CSV và đếm lại từ đầu.
@@ -1019,11 +962,11 @@ actions:
     - type: contain
       subject: hand
       target: Target
-      min_thr: 0.3
+      min_thr: 0.2
     - type: stationary
       subject: Target
       history_len: 15
-      min_iou: 0.85
+      min_iou: 0.75
     hold_frames: 3
     grace_miss: 15
   - id: component_placed_on_target
@@ -1136,11 +1079,11 @@ actions:
     - type: contain
       subject: hand
       target: Target
-      min_thr: 0.3
+      min_thr: 0.2
     - type: stationary
       subject: Target
       history_len: 15
-      min_iou: 0.85
+      min_iou: 0.75
     hold_frames: 3
     grace_miss: 15
   - id: component_placed_on_target
@@ -1251,6 +1194,74 @@ actions:
         min_iou: 0.85
     hold_frames: 30
     grace_miss: 30
+- id: board_back_to_conveyor_4
+  description: 'Nhóm tác vụ độc lập: Lấy board đặt lại chuyền. (Chỉ tính giờ từ khi
+    board TỪ TRONG jig bắt đầu bị rút ra) (lần 4)'
+  max_action_frames: 0
+  timer_start_phase: 1
+  phases:
+  - id: board_stable_in_jig_or_static
+    conditions:
+    - type: or
+      sub_conditions:
+      - type: contain
+        subject: Target
+        target: jig
+        min_thr: 0.9
+      - type: stationary
+        subject: Target
+        history_len: 10
+        min_iou: 0.85
+    hold_frames: 30
+  - id: board_starts_leaving_stable_state
+    conditions:
+    - type: or
+      sub_conditions:
+      - type: not_contain
+        subject: Target
+        target: jig
+        max_thr: 0.88
+      - type: missing
+        subject: Target
+    hold_frames: 15
+    grace_miss: 30
+  - id: board_missing_from_camera
+    conditions:
+    - type: missing
+      subject: Target
+    hold_frames: 4
+    grace_miss: 10
+- id: put_board_into_jig_5
+  description: 'Nhóm tác vụ độc lập: Đặt board vào jig. Bắt đầu khi board xuất hiện,
+    hoàn thành khi board nằm gọn. Sau khi hoàn thành sẽ lưu CSV và đếm lại từ đầu.
+    (lần 5)'
+  max_action_frames: 0
+  phases:
+  - id: wait_board_appear
+    conditions:
+    - type: exists
+      subject: Target
+      min_count: 1
+    - type: history_missing
+      subject: Target
+      history_len: 20
+      min_missing_frames: 15
+    hold_frames: 3
+    grace_miss: 10
+  - id: put_board_in_jig_or_static
+    conditions:
+    - type: or
+      sub_conditions:
+      - type: contain
+        subject: Target
+        target: jig
+        min_thr: 0.9
+      - type: stationary
+        subject: Target
+        history_len: 10
+        min_iou: 0.85
+    hold_frames: 30
+    grace_miss: 30
 - id: take_gasket_9
   description: 'Nhóm tác vụ độc lập: Lấy 1 kiện từ khay kéo ra khỏi khay. (lần 9)'
   max_action_frames: 0
@@ -1321,11 +1332,11 @@ actions:
     - type: contain
       subject: hand
       target: Target
-      min_thr: 0.3
+      min_thr: 0.2
     - type: stationary
       subject: Target
       history_len: 15
-      min_iou: 0.85
+      min_iou: 0.75
     hold_frames: 3
     grace_miss: 15
   - id: component_placed_on_target
@@ -1368,74 +1379,6 @@ actions:
       min_frames: 5
       max_frames: 40
       weight: 0.5
-- id: board_back_to_conveyor_4
-  description: 'Nhóm tác vụ độc lập: Lấy board đặt lại chuyền. (Chỉ tính giờ từ khi
-    board TỪ TRONG jig bắt đầu bị rút ra) (lần 4)'
-  max_action_frames: 0
-  timer_start_phase: 1
-  phases:
-  - id: board_stable_in_jig_or_static
-    conditions:
-    - type: or
-      sub_conditions:
-      - type: contain
-        subject: Target
-        target: jig
-        min_thr: 0.9
-      - type: stationary
-        subject: Target
-        history_len: 10
-        min_iou: 0.85
-    hold_frames: 30
-  - id: board_starts_leaving_stable_state
-    conditions:
-    - type: or
-      sub_conditions:
-      - type: not_contain
-        subject: Target
-        target: jig
-        max_thr: 0.88
-      - type: missing
-        subject: Target
-    hold_frames: 15
-    grace_miss: 30
-  - id: board_missing_from_camera
-    conditions:
-    - type: missing
-      subject: Target
-    hold_frames: 4
-    grace_miss: 10
-- id: put_board_into_jig_5
-  description: 'Nhóm tác vụ độc lập: Đặt board vào jig. Bắt đầu khi board xuất hiện,
-    hoàn thành khi board nằm gọn. Sau khi hoàn thành sẽ lưu CSV và đếm lại từ đầu.
-    (lần 5)'
-  max_action_frames: 0
-  phases:
-  - id: wait_board_appear
-    conditions:
-    - type: exists
-      subject: Target
-      min_count: 1
-    - type: history_missing
-      subject: Target
-      history_len: 20
-      min_missing_frames: 15
-    hold_frames: 3
-    grace_miss: 10
-  - id: put_board_in_jig_or_static
-    conditions:
-    - type: or
-      sub_conditions:
-      - type: contain
-        subject: Target
-        target: jig
-        min_thr: 0.9
-      - type: stationary
-        subject: Target
-        history_len: 10
-        min_iou: 0.85
-    hold_frames: 30
-    grace_miss: 30
 - id: take_gasket_10
   description: 'Nhóm tác vụ độc lập: Lấy 1 kiện từ khay kéo ra khỏi khay. (lần 10)'
   max_action_frames: 0
@@ -1496,63 +1439,6 @@ actions:
       min_hits: 3
       weight: 3.0
       prerequisite: true
-- id: attach_gasket_10
-  description: 'Nhóm tác vụ độc lập: Gắn linh kiện lên đích. (lần 10)'
-  max_action_frames: 180
-  timer_start_phase: 1
-  phases:
-  - id: hand_moves_to_target
-    conditions:
-    - type: contain
-      subject: hand
-      target: Target
-      min_thr: 0.3
-    - type: stationary
-      subject: Target
-      history_len: 15
-      min_iou: 0.85
-    hold_frames: 3
-    grace_miss: 15
-  - id: component_placed_on_target
-    conditions:
-    - type: or
-      sub_conditions:
-      - type: contain
-        subject: Component
-        target: Target
-        min_thr: 0.2
-      - type: history_exists
-        subject: Component
-        history_len: 10
-        min_frames: 1
-    hold_frames: 3
-    grace_miss: 15
-  - id: hand_leaves_target_or_enters_container
-    conditions:
-    - type: or
-      sub_conditions:
-      - type: not_contain
-        subject: hand
-        target: Target
-        max_thr: 0.2
-      - type: contain
-        subject: hand
-        target: Container
-        min_thr: 0.4
-    hold_frames: 10
-    grace_miss: 15
-  score_rules:
-    spatial:
-      subject: hand
-      target: Target
-      weight: 1.0
-    temporal:
-      subject: hand
-      target: Target
-      threshold: 0.3
-      min_frames: 5
-      max_frames: 40
-      weight: 0.5
 - id: take_gasket_11
   description: 'Nhóm tác vụ độc lập: Lấy 1 kiện từ khay kéo ra khỏi khay. (lần 11)'
   max_action_frames: 0
@@ -1613,123 +1499,6 @@ actions:
       min_hits: 3
       weight: 3.0
       prerequisite: true
-- id: take_gasket_12
-  description: 'Nhóm tác vụ độc lập: Lấy 1 kiện từ khay kéo ra khỏi khay. (lần 12)'
-  max_action_frames: 0
-  timer_start_phase: 0
-  phases:
-  - id: hand_enters_container_but_not_target
-    conditions:
-    - type: contain
-      subject: hand
-      target: Container
-      min_thr: 0.35
-    - type: not_contain
-      subject: hand
-      target: Target
-      max_thr: 0.3
-    - type: or
-      sub_conditions:
-      - type: iou
-        subject: hand
-        target: Component
-        min_thr: 0.005
-      - type: history_exists
-        subject: Component
-        history_len: 8
-        min_frames: 3
-    hold_frames: 4
-    grace_miss: 10
-  - id: hand_leaves_container_or_enters_target
-    conditions:
-    - type: or
-      sub_conditions:
-      - type: not_contain
-        subject: hand
-        target: Container
-        max_thr: 0.3
-      - type: contain
-        subject: hand
-        target: Target
-        min_thr: 0.3
-    hold_frames: 3
-    grace_miss: 10
-  score_rules:
-    spatial:
-      subject: hand
-      target: Container
-      weight: 1.0
-    temporal:
-      subject: hand
-      target: Container
-      threshold: 0.3
-      min_frames: 5
-      max_frames: 40
-      weight: 0.5
-    verification:
-      effector: hand
-      component: Component
-      post_frames: 60
-      min_hits: 3
-      weight: 3.0
-      prerequisite: true
-- id: attach_gasket_and_gasket_11_and_12
-  description: 'Nhóm tác vụ độc lập: Gắn linh kiện lên đích. (lần 11_and_12)'
-  max_action_frames: 180
-  timer_start_phase: 1
-  phases:
-  - id: hand_moves_to_target
-    conditions:
-    - type: contain
-      subject: hand
-      target: Target
-      min_thr: 0.3
-    - type: stationary
-      subject: Target
-      history_len: 15
-      min_iou: 0.85
-    hold_frames: 3
-    grace_miss: 15
-  - id: component_placed_on_target
-    conditions:
-    - type: or
-      sub_conditions:
-      - type: contain
-        subject: Component
-        target: Target
-        min_thr: 0.2
-      - type: history_exists
-        subject: Component
-        history_len: 10
-        min_frames: 1
-    hold_frames: 3
-    grace_miss: 15
-  - id: hand_leaves_target_or_enters_container
-    conditions:
-    - type: or
-      sub_conditions:
-      - type: not_contain
-        subject: hand
-        target: Target
-        max_thr: 0.2
-      - type: contain
-        subject: hand
-        target: Container
-        min_thr: 0.4
-    hold_frames: 10
-    grace_miss: 15
-  score_rules:
-    spatial:
-      subject: hand
-      target: Target
-      weight: 1.0
-    temporal:
-      subject: hand
-      target: Target
-      threshold: 0.3
-      min_frames: 5
-      max_frames: 40
-      weight: 0.5
 - id: board_back_to_conveyor_5
   description: 'Nhóm tác vụ độc lập: Lấy board đặt lại chuyền. (Chỉ tính giờ từ khi
     board TỪ TRONG jig bắt đầu bị rút ra) (lần 5)'
@@ -1767,63 +1536,6 @@ actions:
       subject: Target
     hold_frames: 4
     grace_miss: 10
-- id: attach_gasket_12
-  description: 'Nhóm tác vụ độc lập: Gắn linh kiện lên đích. (lần 12)'
-  max_action_frames: 180
-  timer_start_phase: 1
-  phases:
-  - id: hand_moves_to_target
-    conditions:
-    - type: contain
-      subject: hand
-      target: Target
-      min_thr: 0.3
-    - type: stationary
-      subject: Target
-      history_len: 15
-      min_iou: 0.85
-    hold_frames: 3
-    grace_miss: 15
-  - id: component_placed_on_target
-    conditions:
-    - type: or
-      sub_conditions:
-      - type: contain
-        subject: Component
-        target: Target
-        min_thr: 0.2
-      - type: history_exists
-        subject: Component
-        history_len: 10
-        min_frames: 1
-    hold_frames: 3
-    grace_miss: 15
-  - id: hand_leaves_target_or_enters_container
-    conditions:
-    - type: or
-      sub_conditions:
-      - type: not_contain
-        subject: hand
-        target: Target
-        max_thr: 0.2
-      - type: contain
-        subject: hand
-        target: Container
-        min_thr: 0.4
-    hold_frames: 10
-    grace_miss: 15
-  score_rules:
-    spatial:
-      subject: hand
-      target: Target
-      weight: 1.0
-    temporal:
-      subject: hand
-      target: Target
-      threshold: 0.3
-      min_frames: 5
-      max_frames: 40
-      weight: 0.5
 - id: put_board_into_jig_6
   description: 'Nhóm tác vụ độc lập: Đặt board vào jig. Bắt đầu khi board xuất hiện,
     hoàn thành khi board nằm gọn. Sau khi hoàn thành sẽ lưu CSV và đếm lại từ đầu.
@@ -1855,162 +1567,8 @@ actions:
         min_iou: 0.85
     hold_frames: 30
     grace_miss: 30
-- id: take_shielding_13
-  description: 'Nhóm tác vụ độc lập: Lấy 1 kiện từ khay kéo ra khỏi khay. (lần 13)'
-  max_action_frames: 0
-  timer_start_phase: 0
-  phases:
-  - id: hand_enters_container_but_not_target
-    conditions:
-    - type: contain
-      subject: hand
-      target: Container
-      min_thr: 0.35
-    - type: not_contain
-      subject: hand
-      target: Target
-      max_thr: 0.3
-    - type: or
-      sub_conditions:
-      - type: iou
-        subject: hand
-        target: Component
-        min_thr: 0.005
-      - type: history_exists
-        subject: Component
-        history_len: 8
-        min_frames: 3
-    hold_frames: 4
-    grace_miss: 10
-  - id: hand_leaves_container_or_enters_target
-    conditions:
-    - type: or
-      sub_conditions:
-      - type: not_contain
-        subject: hand
-        target: Container
-        max_thr: 0.3
-      - type: contain
-        subject: hand
-        target: Target
-        min_thr: 0.3
-    hold_frames: 3
-    grace_miss: 10
-  score_rules:
-    spatial:
-      subject: hand
-      target: Container
-      weight: 1.0
-    temporal:
-      subject: hand
-      target: Container
-      threshold: 0.3
-      min_frames: 5
-      max_frames: 40
-      weight: 0.5
-    verification:
-      effector: hand
-      component: Component
-      post_frames: 60
-      min_hits: 3
-      weight: 3.0
-      prerequisite: true
-- id: attach_shielding_13
-  description: 'Nhóm tác vụ độc lập: Gắn linh kiện lên đích. (lần 13)'
-  max_action_frames: 180
-  timer_start_phase: 1
-  phases:
-  - id: hand_moves_to_target
-    conditions:
-    - type: contain
-      subject: hand
-      target: Target
-      min_thr: 0.3
-    - type: stationary
-      subject: Target
-      history_len: 15
-      min_iou: 0.85
-    hold_frames: 3
-    grace_miss: 15
-  - id: component_placed_on_target
-    conditions:
-    - type: or
-      sub_conditions:
-      - type: contain
-        subject: Component
-        target: Target
-        min_thr: 0.2
-      - type: history_exists
-        subject: Component
-        history_len: 10
-        min_frames: 1
-    hold_frames: 3
-    grace_miss: 15
-  - id: hand_leaves_target_or_enters_container
-    conditions:
-    - type: or
-      sub_conditions:
-      - type: not_contain
-        subject: hand
-        target: Target
-        max_thr: 0.2
-      - type: contain
-        subject: hand
-        target: Container
-        min_thr: 0.4
-    hold_frames: 10
-    grace_miss: 15
-  score_rules:
-    spatial:
-      subject: hand
-      target: Target
-      weight: 1.0
-    temporal:
-      subject: hand
-      target: Target
-      threshold: 0.3
-      min_frames: 5
-      max_frames: 40
-      weight: 0.5
-- id: board_back_to_conveyor_6
-  description: 'Nhóm tác vụ độc lập: Lấy board đặt lại chuyền. (Chỉ tính giờ từ khi
-    board TỪ TRONG jig bắt đầu bị rút ra) (lần 6)'
-  max_action_frames: 0
-  timer_start_phase: 1
-  phases:
-  - id: board_stable_in_jig_or_static
-    conditions:
-    - type: or
-      sub_conditions:
-      - type: contain
-        subject: Target
-        target: jig
-        min_thr: 0.9
-      - type: stationary
-        subject: Target
-        history_len: 10
-        min_iou: 0.85
-    hold_frames: 30
-  - id: board_starts_leaving_stable_state
-    conditions:
-    - type: or
-      sub_conditions:
-      - type: not_contain
-        subject: Target
-        target: jig
-        max_thr: 0.88
-      - type: missing
-        subject: Target
-    hold_frames: 15
-    grace_miss: 30
-  - id: board_missing_from_camera
-    conditions:
-    - type: missing
-      subject: Target
-    hold_frames: 4
-    grace_miss: 10
 _inference_meta:
-  total_matches: 38
+  total_matches: 30
   matches:
   - action_id: put_board_into_jig_1
     source_template: put_board.yaml
@@ -2026,8 +1584,8 @@ _inference_meta:
     confidence: 1.0
   - action_id: attach_gasket_1
     source_template: attach_only.yaml
-    start_frame: 97
-    match_start_frame: 97
+    start_frame: 93
+    match_start_frame: 93
     end_frame: 149
     confidence: 1.0
   - action_id: take_gasket_2
@@ -2036,17 +1594,11 @@ _inference_meta:
     match_start_frame: 113
     end_frame: 165
     confidence: 1.0
-  - action_id: board_back_to_conveyor_1
-    source_template: return_board.yaml
-    start_frame: 343
-    match_start_frame: 177
-    end_frame: 368
-    confidence: 1.0
   - action_id: attach_gasket_2
     source_template: attach_only.yaml
-    start_frame: 179
+    start_frame: 177
     match_start_frame: 177
-    end_frame: 214
+    end_frame: 210
     confidence: 1.0
   - action_id: take_gasket_3
     source_template: take_only.yaml
@@ -2060,6 +1612,12 @@ _inference_meta:
     match_start_frame: 277
     end_frame: 292
     confidence: 1.0
+  - action_id: board_back_to_conveyor_1
+    source_template: return_board.yaml
+    start_frame: 343
+    match_start_frame: 177
+    end_frame: 368
+    confidence: 1.0
   - action_id: put_board_into_jig_2
     source_template: put_board.yaml
     start_frame: 392
@@ -2068,23 +1626,17 @@ _inference_meta:
     confidence: 1.0
   - action_id: take_shielding_4
     source_template: take_only.yaml
-    start_frame: 456
+    start_frame: 433
     match_start_frame: 401
     end_frame: 495
-    confidence: 1.0
-  - action_id: attach_shielding_4
-    source_template: attach_only.yaml
-    start_frame: 511
-    match_start_frame: 501
-    end_frame: 516
     confidence: 1.0
   - action_id: take_shielding_5
     source_template: take_only.yaml
     start_frame: 541
-    match_start_frame: 529
+    match_start_frame: 509
     end_frame: 570
     confidence: 1.0
-  - action_id: attach_shielding_5
+  - action_id: attach_shielding_and_shielding_4_and_5
     source_template: attach_only.yaml
     start_frame: 573
     match_start_frame: 573
@@ -2092,21 +1644,21 @@ _inference_meta:
     confidence: 1.0
   - action_id: take_shielding_6
     source_template: take_only.yaml
-    start_frame: 628
+    start_frame: 624
     match_start_frame: 624
     end_frame: 651
-    confidence: 1.0
-  - action_id: board_back_to_conveyor_2
-    source_template: return_board.yaml
-    start_frame: 715
-    match_start_frame: 653
-    end_frame: 733
     confidence: 1.0
   - action_id: attach_shielding_6
     source_template: attach_only.yaml
     start_frame: 657
     match_start_frame: 657
     end_frame: 672
+    confidence: 1.0
+  - action_id: board_back_to_conveyor_2
+    source_template: return_board.yaml
+    start_frame: 715
+    match_start_frame: 653
+    end_frame: 733
     confidence: 1.0
   - action_id: put_board_into_jig_3
     source_template: put_board.yaml
@@ -2116,7 +1668,7 @@ _inference_meta:
     confidence: 1.0
   - action_id: take_gasket_7
     source_template: take_only.yaml
-    start_frame: 873
+    start_frame: 817
     match_start_frame: 817
     end_frame: 914
     confidence: 1.0
@@ -2128,13 +1680,13 @@ _inference_meta:
     confidence: 1.0
   - action_id: take_gasket_8
     source_template: take_only.yaml
-    start_frame: 973
+    start_frame: 967
     match_start_frame: 967
     end_frame: 999
     confidence: 1.0
   - action_id: attach_gasket_8
     source_template: attach_only.yaml
-    start_frame: 1008
+    start_frame: 1009
     match_start_frame: 1005
     end_frame: 1020
     confidence: 1.0
@@ -2150,18 +1702,6 @@ _inference_meta:
     match_start_frame: 1093
     end_frame: 1182
     confidence: 1.0
-  - action_id: take_gasket_9
-    source_template: take_only.yaml
-    start_frame: 1183
-    match_start_frame: 1157
-    end_frame: 1194
-    confidence: 1.0
-  - action_id: attach_gasket_9
-    source_template: attach_only.yaml
-    start_frame: 1197
-    match_start_frame: 1197
-    end_frame: 1215
-    confidence: 1.0
   - action_id: board_back_to_conveyor_4
     source_template: return_board.yaml
     start_frame: 1588
@@ -2174,35 +1714,29 @@ _inference_meta:
     match_start_frame: 1597
     end_frame: 1678
     confidence: 1.0
-  - action_id: take_gasket_10
+  - action_id: take_gasket_9
     source_template: take_only.yaml
     start_frame: 1687
     match_start_frame: 1673
     end_frame: 1724
     confidence: 1.0
-  - action_id: attach_gasket_10
+  - action_id: attach_gasket_9
     source_template: attach_only.yaml
     start_frame: 1725
     match_start_frame: 1725
     end_frame: 1792
     confidence: 1.0
-  - action_id: take_gasket_11
+  - action_id: take_gasket_10
     source_template: take_only.yaml
     start_frame: 1793
     match_start_frame: 1725
     end_frame: 1824
     confidence: 1.0
-  - action_id: take_gasket_12
+  - action_id: take_gasket_11
     source_template: take_only.yaml
-    start_frame: 1883
+    start_frame: 1825
     match_start_frame: 1821
     end_frame: 1897
-    confidence: 1.0
-  - action_id: attach_gasket_and_gasket_11_and_12
-    source_template: attach_only.yaml
-    start_frame: 1829
-    match_start_frame: 1829
-    end_frame: 1846
     confidence: 1.0
   - action_id: board_back_to_conveyor_5
     source_template: return_board.yaml
@@ -2210,33 +1744,9 @@ _inference_meta:
     match_start_frame: 1865
     end_frame: 1992
     confidence: 1.0
-  - action_id: attach_gasket_12
-    source_template: attach_only.yaml
-    start_frame: 1920
-    match_start_frame: 1917
-    end_frame: 1932
-    confidence: 1.0
   - action_id: put_board_into_jig_6
     source_template: put_board.yaml
     start_frame: 2028
     match_start_frame: 1989
     end_frame: 2063
-    confidence: 1.0
-  - action_id: take_shielding_13
-    source_template: take_only.yaml
-    start_frame: 2334
-    match_start_frame: 2253
-    end_frame: 2371
-    confidence: 1.0
-  - action_id: attach_shielding_13
-    source_template: attach_only.yaml
-    start_frame: 2377
-    match_start_frame: 2377
-    end_frame: 2411
-    confidence: 1.0
-  - action_id: board_back_to_conveyor_6
-    source_template: return_board.yaml
-    start_frame: 2455
-    match_start_frame: 2385
-    end_frame: 2473
     confidence: 1.0

@@ -38,45 +38,28 @@ actions:
         grace_miss: 40
       - id: "gasket_leaves_source"
         conditions:
-          - type: "or"
+          - type: "and"
             sub_conditions:
-              - type: "and"
+              - type: "or"
                 sub_conditions:
-                  - type: "or"
-                    sub_conditions:
-                      - type: "iou"
-                        subject: "tweezers"
-                        target: "gasket"
-                        min_thr: 0.01
-                      - type: "iou"
-                        subject: "hand"
-                        target: "gasket"
-                        min_thr: 0.01
-                      - type: "same_roi"
-                        subject: "tweezers"
-                        target: "gasket"
-                  - type: "not_contain"
+                  - type: "iou"
                     subject: "tweezers"
-                    target: "liner"
-                    max_thr: 0.05
-              - type: "and"
-                sub_conditions:
-                  - type: "or"
-                    sub_conditions:
-                      - type: "iou"
-                        subject: "tweezers"
-                        target: "gasket"
-                        min_thr: 0.01
-                      - type: "iou"
-                        subject: "hand"
-                        target: "gasket"
-                        min_thr: 0.01
-                      - type: "same_roi"
-                        subject: "tweezers"
-                        target: "gasket"
-                  - type: "not_contain"
+                    target: "gasket"
+                    min_thr: 0.01
+                  - type: "iou"
+                    subject: "hand"
+                    target: "gasket"
+                    min_thr: 0.01
+                  - type: "same_roi"
                     subject: "tweezers"
-                    target: "tray"
-                    max_thr: 0.05
-        hold_frames: 8
+                    target: "gasket"
+              - type: "not_contain"
+                subject: "tweezers"
+                target: "liner"
+                max_thr: 0.05
+              - type: "not_contain"
+                subject: "tweezers"
+                target: "tray"
+                max_thr: 0.05
+        hold_frames: 15
         grace_miss: 60

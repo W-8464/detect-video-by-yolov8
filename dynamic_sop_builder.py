@@ -40,7 +40,8 @@ DEFAULT_CLASS_COLORS = {
 }
 
 TAKE_GASKET_ACTION_ID = "take_gasket"
-ATTACH_GASKET_TO_SHIELDING_ACTION_ID = "attach_gasket_to_shielding"
+APPLY_GASKET_TO_SHIELDING_ACTION_ID = "apply_gasket_to_shielding"
+ATTACH_GASKET_PAYLOAD_TO_BOARD_ACTION_ID = "attach_shielding_and_gasket"
 
 
 def draw_detection_boxes(frame: np.ndarray, detections: List[Detection], class_colors: Optional[Dict[str, tuple]] = None) -> np.ndarray:
@@ -368,13 +369,30 @@ class ActionTemplate:
                 was_in_container[comp_cls] = False
 
         # Phase B: accumulate IoU between hand and component during action + post frames
+        # Refinement for 'take' actions: identify the specific hand track ID that actually entered the container.
+        effective_hand_ids = hand_track_ids
+        if hand_track_ids and self.base_id in ("take_component", "take_only", "take_from_liner", "take_liner"):
+            hand_scores: Dict[int, float] = {}
+            for fi in range(action_start, action_end):
+                containers = [d for d in frames[fi] if d.cls in container_classes]
+                if not containers: continue
+                for d in frames[fi]:
+                    if d.cls == "hand" and d.track_id in hand_track_ids:
+                        h_box = aabb(d.poly)
+                        best_r = max((contain_ratio_aabb(h_box, aabb(ct.poly)) for ct in containers), default=0.0)
+                        hand_scores[d.track_id] = hand_scores.get(d.track_id, 0.0) + best_r
+            if hand_scores:
+                best_tid = max(hand_scores, key=hand_scores.get)
+                if hand_scores[best_tid] > 0.1:
+                    effective_hand_ids = {best_tid}
+
         iou_per_class: Dict[str, float] = {}
         hit_frames_per_class: Dict[str, int] = {}
         for i in range(action_start, verify_end):
             frame_dets = frames[i]
             hand_dets = [d for d in frame_dets if d.cls == "hand"]
-            if hand_track_ids is not None:
-                hand_dets = [d for d in hand_dets if d.track_id in hand_track_ids]
+            if effective_hand_ids is not None:
+                hand_dets = [d for d in hand_dets if d.track_id in effective_hand_ids]
             comp_dets = [d for d in frame_dets if d.cls in component_classes]
             container_dets = [d for d in frame_dets if d.cls in container_classes]
 
@@ -515,7 +533,7 @@ class DynamicSOPBuilder:
                 continue
             if tmpl.base_id == TAKE_GASKET_ACTION_ID:
                 last_take_gasket_end = max(last_take_gasket_end, seg_end)
-            elif tmpl.base_id == ATTACH_GASKET_TO_SHIELDING_ACTION_ID:
+            elif tmpl.base_id == APPLY_GASKET_TO_SHIELDING_ACTION_ID:
                 last_attach_gasket_end = max(last_attach_gasket_end, seg_end)
 
         return {
@@ -539,12 +557,14 @@ class DynamicSOPBuilder:
             return False
         if (int(cand["start_frame"]) - last_take) > self.gasket_attach_max_gap_frames:
             return False
-        # Require a take_shielding to have completed after take_gasket and before this attach.
+        # Require a shielding to have been taken since the last generic attach/put.
         cand_start = int(cand["start_frame"])
         has_shielding_take = False
         for seg in prior_segments:
+            tmpl_seg = seg["template"]
             seg_end = int(seg["end_frame"])
-            if seg_end <= last_take or seg_end >= cand_start:
+            # Shielding take must be before this attach and after the last cycle reset.
+            if seg_end <= st["last_generic_attach_end"] or seg_end >= cand_start:
                 continue
             detected = seg.get("detected_component", None)
             if detected == "shielding":
@@ -582,6 +602,38 @@ class DynamicSOPBuilder:
         if latest_take_end < 0:
             return False
         return (attach_start - latest_take_end) <= self.attach_anchor_max_gap_frames
+
+    @staticmethod
+    def _hand_matches_prior_take(
+        prior_segments: List[Dict[str, Any]], attach_cand: Dict[str, Any]
+    ) -> bool:
+        """
+        Ensure the attach candidate involves at least one hand that also appeared
+        in the most recent take action.  Prevents a hand idling near the target
+        from falsely triggering an attach while the real take hand is still busy.
+        """
+        attach_hand_ids = attach_cand.get("hand_track_ids")
+        if not attach_hand_ids:
+            return True  # no hand ids to verify → allow (backward compat)
+
+        attach_start = int(attach_cand["start_frame"])
+        latest_take = None
+        for seg in reversed(prior_segments):
+            tmpl = seg["template"]
+            if int(seg["end_frame"]) >= attach_start:
+                continue
+            if DynamicSOPBuilder._is_take_anchor_for_generic_attach(tmpl.base_id):
+                latest_take = seg
+                break
+
+        if latest_take is None:
+            return False
+
+        take_hand_ids = latest_take.get("hand_track_ids")
+        if not take_hand_ids:
+            return True
+
+        return bool(attach_hand_ids & take_hand_ids)
 
     def _get_template_for_role(self, role: str) -> ActionTemplate:
         role_map = {
@@ -633,8 +685,10 @@ class DynamicSOPBuilder:
             TAKE_GASKET_ACTION_ID,
         ):
             return "take"
-        if bid in ("attach_component", "attach_only", ATTACH_GASKET_TO_SHIELDING_ACTION_ID):
+        if bid in ("attach_component", "attach_only"):
             return "attach"
+        if bid == APPLY_GASKET_TO_SHIELDING_ACTION_ID:
+            return "subtask"
         if bid in ("board_back_to_conveyor", "return_board"):
             return "return"
         return "other"
@@ -735,7 +789,7 @@ class DynamicSOPBuilder:
         elif prev_role == "put" and cur_role == "return":
             score -= 0.5
 
-        if prev_t.base_id == TAKE_GASKET_ACTION_ID and cur_t.base_id == ATTACH_GASKET_TO_SHIELDING_ACTION_ID:
+        if prev_t.base_id == TAKE_GASKET_ACTION_ID and cur_t.base_id == APPLY_GASKET_TO_SHIELDING_ACTION_ID:
             score += 0.75
 
         return score
@@ -878,7 +932,7 @@ class DynamicSOPBuilder:
 
                     tmpl: ActionTemplate = cand["template"]
 
-                    if tmpl.base_id == ATTACH_GASKET_TO_SHIELDING_ACTION_ID:
+                    if tmpl.base_id == APPLY_GASKET_TO_SHIELDING_ACTION_ID:
                         prior = [candidates[j] for j in st["path"]]
                         if ord_s <= int(st["last_end"]):
                             continue
@@ -907,6 +961,23 @@ class DynamicSOPBuilder:
                         ):
                             continue
                         if not self._has_take_since_last_generic_attach(prior, cand):
+                            continue
+                        if not self._hand_matches_prior_take(prior, cand):
+                            continue
+                    elif tmpl.base_id == ATTACH_GASKET_PAYLOAD_TO_BOARD_ACTION_ID:
+                        prior = [candidates[j] for j in st["path"]]
+                        if ord_s <= int(st["last_end"]):
+                            continue
+                        gasket_state = self._gasket_state_before(prior, int(cand["start_frame"]))
+                        if gasket_state["last_attach_gasket_end"] < 0:
+                            continue
+                        # Ensure shielding was taken
+                        has_shielding = any(
+                            (p["template"].base_id in ("take_only", "take_component") and p.get("detected_component") == "shielding")
+                            or p["template"].base_id == "take_shielding"
+                            for p in prior
+                        )
+                        if not has_shielding:
                             continue
 
                     # Force "put" as the starting action if a "put" candidate exists in pool.
@@ -1006,7 +1077,7 @@ class DynamicSOPBuilder:
         # Only consider take/attach candidates for augmentation
         pool = [
             c for c in candidates 
-            if self._template_role(c["template"]) in ("take", "attach", "take_attach", "take_only")
+            if self._template_role(c["template"]) in ("take", "attach", "take_attach", "take_only", "subtask")
             and float(c["confidence"]) >= max(0.5, self.role_thresholds.get(self._template_role(c["template"]), 0.5) - 0.05)
         ]
         pool.sort(key=lambda x: (x["start_frame"], -x["confidence"]))
@@ -1024,12 +1095,25 @@ class DynamicSOPBuilder:
                 continue
 
             # State checks for special items (gaskets etc)
-            if cand["template"].base_id == ATTACH_GASKET_TO_SHIELDING_ACTION_ID:
+            if cand["template"].base_id == APPLY_GASKET_TO_SHIELDING_ACTION_ID:
                 if not self._allow_attach_gasket(selected, cand): continue
             elif cand["template"].base_id == TAKE_GASKET_ACTION_ID:
                 if not self._allow_take_gasket(selected, cand): continue
             elif cand["template"].base_id in ("attach_component", "attach_only"):
                 if not self._has_take_since_last_generic_attach(selected, cand): continue
+                if not self._hand_matches_prior_take(selected, cand): continue
+            elif cand["template"].base_id == ATTACH_GASKET_PAYLOAD_TO_BOARD_ACTION_ID:
+                gasket_state = self._gasket_state_before(selected, int(cand["start_frame"]))
+                if gasket_state["last_attach_gasket_end"] < 0:
+                    continue
+                # Ensure shielding take
+                has_shielding = any(
+                    (p["template"].base_id in ("take_only", "take_component") and p.get("detected_component") == "shielding")
+                    or p["template"].base_id == "take_shielding"
+                    for p in selected
+                )
+                if not has_shielding:
+                    continue
 
             selected.append(cand)
             existing_ranges.append((s, e))
@@ -1146,26 +1230,109 @@ class DynamicSOPBuilder:
             cur["end_frame"] = max(cur_start, clipped_end)
         return out
 
+    def _refine_take_timer_by_hand(
+        self,
+        sequence: List[Dict[str, Any]],
+        frames: List[List[Detection]],
+        inherited_groups: Dict[str, List[str]],
+    ) -> List[Dict[str, Any]]:
+        """Refine take timer using only the hand(s) that actually enter the container.
+        This prevents false-positive timer starts from an idle hand that was already
+        near the container before the actual take started."""
+        out: List[Dict[str, Any]] = []
+        for item in sequence:
+            tmpl: ActionTemplate = item["template"]
+            if self._template_role(tmpl) != "take":
+                out.append(item)
+                continue
+
+            candidate_hand_ids = item.get("hand_track_ids")
+            if not candidate_hand_ids:
+                out.append(item)
+                continue
+
+            # Identify which hand(s) actually entered a Container during the take.
+            take_hand_ids = self._hands_in_container(
+                frames, inherited_groups, item, candidate_hand_ids
+            )
+            if not take_hand_ids:
+                # No hand entered a container – keep as is (backward compat).
+                out.append(item)
+                continue
+
+            # Re-find phase 0 using ONLY the hand(s) that entered the container.
+            refined = tmpl.find_first_phase0_with_hands(
+                frames,
+                inherited_groups,
+                take_hand_ids,
+                int(item["start_frame"]) - 1,
+                int(item["end_frame"]),
+            )
+            if refined is not None:
+                item["timer_start_frame"] = refined + 1
+                out.append(item)
+            else:
+                # Phase 0 not met by any hand that entered container -> drop
+                continue
+        return out
+
     def _refine_attach_timer_by_hand(
         self,
         sequence: List[Dict[str, Any]],
         frames: List[List[Detection]],
         inherited_groups: Dict[str, List[str]],
     ) -> List[Dict[str, Any]]:
+        """Refine attach timer using the same hand that performed the preceding take.
+        Attach candidates whose phase 0 cannot be satisfied by the take-hand are
+        removed from the sequence (false positive caused by the other hand idling
+        near the target)."""
+        out: List[Dict[str, Any]] = []
         for i, item in enumerate(sequence):
             tmpl: ActionTemplate = item["template"]
             if tmpl.base_id not in ("attach_component", "attach_only"):
+                out.append(item)
                 continue
+
             attach_start = int(item["start_frame"])
             prev_take_hand_ids: Optional[set] = None
-            for j in range(i - 1, -1, -1):
-                prev = sequence[j]
+            # Search backwards through *already-validated* output to find the
+            # most recent take that ends before this attach.
+            for j in range(len(out) - 1, -1, -1):
+                prev = out[j]
                 prev_tmpl: ActionTemplate = prev["template"]
                 if self._template_role(prev_tmpl) == "take" and int(prev["end_frame"]) < attach_start:
                     prev_take_hand_ids = prev.get("hand_track_ids")
                     break
+
             if not prev_take_hand_ids:
+                # No prior take to anchor to – keep the attach (backward compat).
+                out.append(item)
                 continue
+
+            # Identify which hand(s) actually entered a Container during the take.
+            take_hand_ids = self._hands_in_container(
+                frames, inherited_groups, prev, prev_take_hand_ids
+            )
+            if not take_hand_ids:
+                # Take hand never entered a container – keep attach (backward compat).
+                out.append(item)
+                continue
+
+            # First, try phase 0 with only the container-entering hand(s).
+            refined = tmpl.find_first_phase0_with_hands(
+                frames,
+                inherited_groups,
+                take_hand_ids,
+                int(item["start_frame"]) - 1,
+                int(item["end_frame"]),
+            )
+            if refined is not None:
+                item["timer_start_frame"] = refined + 1
+                out.append(item)
+                continue
+
+            # The take-hand is not in the target area.  Try with *all* hands from
+            # the preceding take – the worker may have switched hands for the attach.
             refined = tmpl.find_first_phase0_with_hands(
                 frames,
                 inherited_groups,
@@ -1173,9 +1340,84 @@ class DynamicSOPBuilder:
                 int(item["start_frame"]) - 1,
                 int(item["end_frame"]),
             )
-            if refined is not None:
-                item["timer_start_frame"] = refined + 1
-        return sequence
+            if refined is None:
+                print(f"[DEBUG] Dropping {tmpl.base_id} because Phase 0 not met by hand(s) {prev_take_hand_ids}")
+                continue  # phase 0 not met by any hand → drop
+
+            # Phase 0 is met by a non-take hand.  If the take-hand is *still* inside
+            # a Container at the attach start, the "attach" is just the other hand
+            # idling near the target while the worker is still taking → drop it.
+            if self._is_hand_in_container_at(
+                frames, inherited_groups, take_hand_ids, int(item["start_frame"])
+            ):
+                continue
+
+            item["timer_start_frame"] = refined + 1
+            out.append(item)
+        return out
+
+    @staticmethod
+    def _hands_in_container(
+        frames: List[List[Detection]],
+        inherited_groups: Dict[str, List[str]],
+        take_item: Dict[str, Any],
+        candidate_hand_ids: set,
+    ) -> set:
+        """Return the subset of *candidate_hand_ids* whose bounding-box centre
+        falls inside any Container detection during the take item's timespan."""
+        container_classes = set(inherited_groups.get("Container", []))
+        if not container_classes:
+            return candidate_hand_ids  # no container definition → keep all
+
+        start_f = max(0, int(take_item.get("timer_start_frame", take_item.get("semantic_start_frame", take_item["start_frame"]))) - 1)
+        end_f = min(len(frames), int(take_item["end_frame"]))
+        active: set = set()
+        for fi in range(start_f, end_f):
+            containers = [d for d in frames[fi] if d.cls in container_classes]
+            if not containers:
+                continue
+            for d in frames[fi]:
+                if d.cls != "hand" or d.track_id is None:
+                    continue
+                if d.track_id not in candidate_hand_ids:
+                    continue
+                # Simple centre-point-in-bbox test for each container.
+                cx = sum(p[0] for p in d.poly) / len(d.poly)
+                cy = sum(p[1] for p in d.poly) / len(d.poly)
+                for c in containers:
+                    cxs = [p[0] for p in c.poly]
+                    cys = [p[1] for p in c.poly]
+                    if min(cxs) <= cx <= max(cxs) and min(cys) <= cy <= max(cys):
+                        active.add(d.track_id)
+                        break
+        return active if active else candidate_hand_ids
+
+    @staticmethod
+    def _is_hand_in_container_at(
+        frames: List[List[Detection]],
+        inherited_groups: Dict[str, List[str]],
+        hand_track_ids: set,
+        frame_idx: int,
+    ) -> bool:
+        """Return True if any hand in *hand_track_ids* has its centre inside
+        a Container detection at the given frame index."""
+        container_classes = set(inherited_groups.get("Container", []))
+        if not container_classes or frame_idx < 0 or frame_idx >= len(frames):
+            return False
+        containers = [d for d in frames[frame_idx] if d.cls in container_classes]
+        if not containers:
+            return False
+        for d in frames[frame_idx]:
+            if d.cls != "hand" or d.track_id not in hand_track_ids:
+                continue
+            cx = sum(p[0] for p in d.poly) / len(d.poly)
+            cy = sum(p[1] for p in d.poly) / len(d.poly)
+            for c in containers:
+                cxs = [p[0] for p in c.poly]
+                cys = [p[1] for p in c.poly]
+                if min(cxs) <= cx <= max(cxs) and min(cys) <= cy <= max(cys):
+                    return True
+        return False
 
     def infer_from_detections(self, detections_jsonl: Path) -> Dict[str, Any]:
         frames = load_detection_frames(detections_jsonl, min_conf=self.min_det_conf)
@@ -1188,6 +1430,9 @@ class DynamicSOPBuilder:
         matched_sequence = self._augment_intermediate_candidates(matched_sequence, candidates)
         matched_sequence = self._attach_return_candidate(matched_sequence, candidates)
         matched_sequence = self._trim_generic_attach_before_next_take(
+            matched_sequence, frames, inherited_groups
+        )
+        matched_sequence = self._refine_take_timer_by_hand(
             matched_sequence, frames, inherited_groups
         )
         matched_sequence = self._refine_attach_timer_by_hand(
@@ -1206,6 +1451,9 @@ class DynamicSOPBuilder:
         return name.replace(" ", "_")
 
     def _build_yaml(self, sequence: List[Dict[str, Any]]) -> Dict[str, Any]:
+        # Ensure temporal order so pending_take_info accumulates correctly.
+        # Use _ordering_start (actual action start) not start_frame (window scan start).
+        sequence = sorted(sequence, key=lambda x: self._ordering_start(x))
         actions_out: List[Dict[str, Any]] = []
         repeat_counters: Dict[str, int] = {}
         matches_meta: List[Dict[str, Any]] = []
