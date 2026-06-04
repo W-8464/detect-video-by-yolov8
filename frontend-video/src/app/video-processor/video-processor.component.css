@@ -26,6 +26,80 @@
   text-align: center;
 }
 
+/* Editing Section */
+.editing-section {
+  margin-top: 30px;
+  text-align: left;
+  border-top: 1px solid #eee;
+  padding-top: 20px;
+}
+
+.help-text {
+  font-size: 0.9rem;
+  color: #666;
+  margin-bottom: 15px;
+}
+
+.actions-list {
+  max-height: 300px;
+  overflow-y: auto;
+  border: 1px solid #eee;
+  border-radius: 8px;
+  margin-bottom: 20px;
+}
+
+.action-item {
+  display: flex;
+  align-items: center;
+  padding: 10px;
+  border-bottom: 1px solid #f9f9f9;
+  transition: background 0.2s;
+}
+
+.action-item:last-child {
+  border-bottom: none;
+}
+
+.action-item.selected {
+  background-color: #e3f2fd;
+}
+
+.action-checkbox {
+  margin-right: 15px;
+}
+
+.action-details {
+  display: flex;
+  flex-direction: column;
+  flex-grow: 1;
+}
+
+.action-details input {
+  border: 1px solid transparent;
+  background: transparent;
+  font-weight: 500;
+  padding: 2px 5px;
+  border-radius: 4px;
+  width: 100%;
+}
+
+.action-details input:focus {
+  border-color: #2196f3;
+  background: white;
+  outline: none;
+}
+
+.action-frames {
+  font-size: 0.8rem;
+  color: #888;
+}
+
+.editing-controls {
+  display: flex;
+  gap: 10px;
+  justify-content: flex-end;
+}
+
 .title {
   font-size: 2rem;
   font-weight: 700;

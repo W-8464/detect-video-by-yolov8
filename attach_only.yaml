@@ -18,7 +18,7 @@ actions:
             history_len: 15
             min_iou: 0.75
         hold_frames: 3
-        grace_miss: 15
+        grace_miss: 20
       - id: "component_placed_on_target"
         conditions:
           - type: "or"
@@ -49,7 +49,7 @@ actions:
                 target: "Container"
                 min_thr: 0.40
         hold_frames: 10
-        grace_miss: 15
+        grace_miss: 20
 
     score_rules:
       spatial:

@@ -39,10 +39,10 @@ global:
   tuning:
     conf_threshold: 0.55
     max_window_frames: 300
-    rearm_frames: 5
+    rearm_frames: 10
     phase_start_wait_frames: 220
     semantic_lookback_frames: 300
-    attach_anchor_max_gap_frames: 150
+    attach_anchor_max_gap_frames: 90
     gasket_attach_max_gap_frames: 220
     min_take_gasket_span_frames: 25
     scan_stride: 4

@@ -64,10 +64,10 @@ global:
   tuning:
     conf_threshold: 0.55
     max_window_frames: 300
-    rearm_frames: 10
+    rearm_frames: 5
     phase_start_wait_frames: 220
     semantic_lookback_frames: 300
-    attach_anchor_max_gap_frames: 90
+    attach_anchor_max_gap_frames: 150
     gasket_attach_max_gap_frames: 220
     min_take_gasket_span_frames: 25
     scan_stride: 4
@@ -137,7 +137,7 @@ actions:
         history_len: 8
         min_frames: 3
     hold_frames: 4
-    grace_miss: 20
+    grace_miss: 10
   - id: hand_leaves_container_or_enters_target
     conditions:
     - type: or
@@ -151,7 +151,7 @@ actions:
         target: Target
         min_thr: 0.3
     hold_frames: 3
-    grace_miss: 20
+    grace_miss: 10
   score_rules:
     spatial:
       subject: hand
@@ -187,7 +187,7 @@ actions:
       history_len: 15
       min_iou: 0.75
     hold_frames: 3
-    grace_miss: 20
+    grace_miss: 15
   - id: component_placed_on_target
     conditions:
     - type: or
@@ -215,7 +215,7 @@ actions:
         target: Container
         min_thr: 0.4
     hold_frames: 10
-    grace_miss: 20
+    grace_miss: 15
   score_rules:
     spatial:
       subject: hand
@@ -254,7 +254,7 @@ actions:
         history_len: 8
         min_frames: 3
     hold_frames: 4
-    grace_miss: 20
+    grace_miss: 10
   - id: hand_leaves_container_or_enters_target
     conditions:
     - type: or
@@ -268,7 +268,7 @@ actions:
         target: Target
         min_thr: 0.3
     hold_frames: 3
-    grace_miss: 20
+    grace_miss: 10
   score_rules:
     spatial:
       subject: hand
@@ -484,49 +484,49 @@ _inference_meta:
   total_matches: 8
   matches:
   - action_id: put_board_into_jig_1
-    source_template: put_board.yaml
+    source_template: /home/admin/my_yolo_project/put_board.yaml
     start_frame: 150
     match_start_frame: 1
     end_frame: 220
     confidence: 1.0
   - action_id: take_PCIe_cable_1
-    source_template: take_only.yaml
+    source_template: /home/admin/my_yolo_project/take_only.yaml
     start_frame: 261
     match_start_frame: 153
     end_frame: 306
     confidence: 1.0
   - action_id: attach_PCIe_cable_1
-    source_template: attach_only.yaml
+    source_template: /home/admin/my_yolo_project/attach_only.yaml
     start_frame: 386
     match_start_frame: 377
     end_frame: 534
     confidence: 1.0
   - action_id: take_shielding_2
-    source_template: take_only.yaml
+    source_template: /home/admin/my_yolo_project/take_only.yaml
     start_frame: 546
     match_start_frame: 541
     end_frame: 577
     confidence: 1.0
   - action_id: take_gasket_3
-    source_template: take_gasket.yaml
+    source_template: /home/admin/my_yolo_project/take_gasket.yaml
     start_frame: 601
     match_start_frame: 597
     end_frame: 693
     confidence: 1.0
   - action_id: apply_gasket_to_shielding_1
-    source_template: apply_gasket_to_shielding.yaml
+    source_template: /home/admin/my_yolo_project/apply_gasket_to_shielding.yaml
     start_frame: 697
     match_start_frame: 697
     end_frame: 756
     confidence: 1.0
   - action_id: attach_shielding_and_gasket
-    source_template: attach_gasket_payload_to_board.yaml
+    source_template: /home/admin/my_yolo_project/attach_gasket_payload_to_board.yaml
     start_frame: 799
     match_start_frame: 741
     end_frame: 907
     confidence: 1.0
   - action_id: board_back_to_conveyor_1
-    source_template: return_board.yaml
+    source_template: /home/admin/my_yolo_project/return_board.yaml
     start_frame: 961
     match_start_frame: 797
     end_frame: 983

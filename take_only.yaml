@@ -35,7 +35,7 @@ actions:
                 history_len: 8
                 min_frames: 3
         hold_frames: 4
-        grace_miss: 10
+        grace_miss: 20
       - id: "hand_leaves_container_or_enters_target"
         conditions:
           - type: "or"
@@ -49,7 +49,7 @@ actions:
                 target: "Target"
                 min_thr: 0.30
         hold_frames: 3
-        grace_miss: 10
+        grace_miss: 20
 
     score_rules:
       spatial:

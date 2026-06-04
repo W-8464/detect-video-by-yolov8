@@ -437,7 +437,7 @@ class DynamicSOPBuilder:
 
         self.conf_threshold = conf_threshold if conf_threshold is not None else float(_tuning.get("conf_threshold", DEFAULT_TUNING["conf_threshold"]))
         self.min_det_conf = float(_tuning.get("min_det_conf", DEFAULT_TUNING["min_det_conf"]))
-        self.min_match_frames = int(_tuning.get("min_match_frames", DEFAULT_TUNING["min_match_frames"]))
+        self.min_match_frames = 15 # Increased from 5 to filter noise fragments
         self.max_window_frames = max_window_frames if max_window_frames is not None else int(_tuning.get("max_window_frames", DEFAULT_TUNING["max_window_frames"]))
         self.rearm_frames = int(_tuning.get("rearm_frames", DEFAULT_TUNING["rearm_frames"]))
         self.scan_stride = int(_tuning.get("scan_stride", DEFAULT_TUNING["scan_stride"]))
@@ -716,8 +716,8 @@ class DynamicSOPBuilder:
         # elif role == "return":
         #     if start >= 620:
         #         role_bias = 0.6 
-        # elif role in ("take", "attach", "take_attach", "take_only"):
-        #     role_bias = 0.1
+        if role in ("take", "attach", "take_attach", "take_only"):
+            role_bias = 0.5
         return float(cand["confidence"]) + dur_bonus + role_bias
 
     @staticmethod
@@ -810,19 +810,17 @@ class DynamicSOPBuilder:
     ) -> List[Dict[str, Any]]:
         candidates: List[Dict[str, Any]] = []
         for tmpl in self.templates:
-            # Block take_gasket if no tweezers appear anywhere in the video.
-            if tmpl.base_id == TAKE_GASKET_ACTION_ID:
-                has_tweezers = any(
-                    any(det.cls == "tweezers" for det in frame)
-                    for frame in frames
-                )
-                if not has_tweezers:
-                    continue
-
             role = self._template_role(tmpl)
             thr = self.role_thresholds.get(role, self.conf_threshold)
             local: List[Dict[str, Any]] = []
             for start in range(0, len(frames), self.scan_stride):
+                # Local check for tweezers if applicable to this template
+                if tmpl.base_id == TAKE_GASKET_ACTION_ID:
+                    window = frames[start : start + self.max_window_frames]
+                    has_tweezers = any(any(det.cls == "tweezers" for det in f) for f in window)
+                    if not has_tweezers:
+                        continue
+
                 start_rel, end_rel, conf, timer_rel, hand_ids = tmpl.try_match(
                     frames[start : start + self.max_window_frames], inherited_groups
                 )
@@ -905,7 +903,7 @@ class DynamicSOPBuilder:
         if not candidates:
             return []
 
-        beam_width = 24
+        beam_width = 64
         max_steps = 100  # Increased from 18 to handle more cycles and actions
         # frozen_nonrepeat: non-repeatable action ids seen since last reset
         beams: List[Dict[str, Any]] = [
@@ -1572,13 +1570,11 @@ def parse_args() -> argparse.Namespace:
         "--templates",
         type=str,
         nargs="+",
-        required=True,
         help="Template YAML files, each should contain exactly one action.",
     )
     parser.add_argument(
         "--detections",
         type=str,
-        required=True,
         help="Detections JSONL path produced by inference_camera.py --detections.",
     )
     parser.add_argument(
@@ -1590,7 +1586,6 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--output",
         type=str,
-        required=True,
         help="Output inferred SOP YAML path.",
     )
     parser.add_argument(
@@ -1616,6 +1611,12 @@ def parse_args() -> argparse.Namespace:
         type=str,
         default="",
         help="Optional overlay mp4 path. Default: <output_stem>_timer_overlay.mp4",
+    )
+    parser.add_argument(
+        "--json-timeline",
+        type=str,
+        default="",
+        help="Path to a JSON file containing timeline rows to render directly.",
     )
     return parser.parse_args()
 
@@ -1742,6 +1743,21 @@ def render_video_with_boxes_and_timer(
 
 def main() -> None:
     args = parse_args()
+    
+    if args.json_timeline:
+        timeline_rows = json.loads(Path(args.json_timeline).read_text(encoding="utf-8"))
+        video_path = Path(args.video)
+        overlay_path = Path(args.overlay_output)
+        detections_path = Path(args.detections) if args.detections else None
+        render_video_with_boxes_and_timer(video_path, overlay_path, detections_path, timeline_rows, min_conf=0.25)
+        print(f"✅ JSON-based timer overlay video written: {overlay_path}")
+        return
+
+    # Normal mode requires these
+    if not args.templates or not args.detections or not args.output:
+        print("Error: --templates, --detections and --output are required unless --json-timeline is provided.")
+        return
+
     template_paths = [Path(p) for p in args.templates]
     detections_path = Path(args.detections)
     output_path = Path(args.output)

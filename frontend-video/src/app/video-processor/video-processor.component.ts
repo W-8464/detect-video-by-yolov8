@@ -10,10 +10,15 @@ import { throwError } from 'rxjs';
 })
 export class VideoProcessorComponent {
   selectedFile: File | null = null;
-  processingState: 'idle' | 'uploading' | 'processing' | 'done' | 'error' = 'idle';
+  processingState: 'idle' | 'uploading' | 'processing' | 'editing' | 'rendering' | 'done' | 'error' = 'idle';
   uploadProgress: number = 0;
   resultVideoUrl: string | null = null;
   errorMessage: string = '';
+  
+  // Action management
+  fileId: string | null = null;
+  actions: any[] = [];
+  selectedActionIndices: number[] = [];
 
   constructor(private http: HttpClient) {}
 
@@ -23,6 +28,8 @@ export class VideoProcessorComponent {
       this.selectedFile = input.files[0];
       this.resultVideoUrl = null;
       this.processingState = 'idle';
+      this.actions = [];
+      this.fileId = null;
     }
   }
 
@@ -32,13 +39,10 @@ export class VideoProcessorComponent {
     this.processingState = 'uploading';
     this.uploadProgress = 0;
     
-    // Create FormData
     const formData = new FormData();
     formData.append('video', this.selectedFile);
 
-    // Make an API call to the C# Backend
-    // Example endpoint: 'https://localhost:5001/api/video/process'
-    this.http.post<{ resultUrl: string }>('/api/video/process', formData, {
+    this.http.post<{ fileId: string, actions: any[] }>('/api/video/process', formData, {
       reportProgress: true,
       observe: 'events'
     }).pipe(
@@ -49,26 +53,83 @@ export class VideoProcessorComponent {
         return throwError(() => error);
       })
     ).subscribe((event: any) => {
-      // Simulate real progress or parse Http progress event
       if (event.type === 1) { // HttpEventType.UploadProgress
         this.uploadProgress = Math.round(100 * event.loaded / event.total);
         if (this.uploadProgress === 100) {
             this.processingState = 'processing';
         }
       } else if (event.type === 4) { // HttpEventType.Response
-        this.processingState = 'done';
-        this.resultVideoUrl = event.body.resultUrl;
+        this.fileId = event.body.fileId;
+        this.actions = event.body.actions;
+        this.processingState = 'editing';
       }
     });
+  }
 
-    // Mock Process (For UI testing without backend)
-    /*
-    setTimeout(() => { this.processingState = 'processing'; }, 1000);
-    setTimeout(() => { 
-      this.processingState = 'done'; 
-      this.resultVideoUrl = 'example_output.mp4'; 
-    }, 5000);
-    */
+  toggleActionSelection(index: number): void {
+    const pos = this.selectedActionIndices.indexOf(index);
+    if (pos > -1) {
+      this.selectedActionIndices.splice(pos, 1);
+    } else {
+      this.selectedActionIndices.push(index);
+      this.selectedActionIndices.sort((a, b) => a - b);
+    }
+  }
+
+  mergeActions(): void {
+    if (this.selectedActionIndices.length < 2) return;
+
+    const firstIdx = this.selectedActionIndices[0];
+    const lastIdx = this.selectedActionIndices[this.selectedActionIndices.length - 1];
+    
+    // Check if they are contiguous in the current actions list
+    // Actually, user said merge regardless of idle in between
+    const newAction = {
+      action_id: 'merged_action',
+      start_frame: this.actions[firstIdx].start_frame,
+      end_frame: this.actions[lastIdx].end_frame
+    };
+
+    // Remove old actions and insert new one
+    const newActionsList = [...this.actions];
+    // We need to remove from highest index to lowest to maintain indices
+    const sortedIndices = [...this.selectedActionIndices].sort((a, b) => b - a);
+    for (const idx of sortedIndices) {
+      newActionsList.splice(idx, 1);
+    }
+    
+    // Insert at the position of the first selected action
+    newActionsList.splice(firstIdx, 0, newAction);
+    
+    this.actions = newActionsList;
+    this.selectedActionIndices = [];
+  }
+
+  renameAction(index: number, newName: string): void {
+    if (newName && newName.trim()) {
+      this.actions[index].action_id = newName.trim();
+    }
+  }
+
+  onRender(): void {
+    if (!this.fileId || this.actions.length === 0) return;
+
+    this.processingState = 'rendering';
+    
+    this.http.post<{ resultUrl: string }>('/api/video/render', {
+      file_id: this.fileId,
+      actions: this.actions
+    }).pipe(
+      catchError(error => {
+        this.processingState = 'error';
+        this.errorMessage = 'Đã có lỗi xảy ra khi render video.';
+        console.error(error);
+        return throwError(() => error);
+      })
+    ).subscribe(res => {
+      this.resultVideoUrl = res.resultUrl;
+      this.processingState = 'done';
+    });
   }
 
   downloadResult(): void {

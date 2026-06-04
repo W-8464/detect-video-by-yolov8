@@ -16,15 +16,19 @@
 
     <!-- Processing Status -->
     <div class="status-section" *ngIf="processingState !== 'idle'">
-      <div class="progress-container" *ngIf="processingState === 'uploading' || processingState === 'processing'">
+      <div class="progress-container" *ngIf="processingState === 'uploading' || processingState === 'processing' || processingState === 'rendering'">
         <div class="progress-info">
           <span class="status-text text-pulsate">
-            {{ processingState === 'uploading' ? 'Đang Upload Video...' : 'Đang xử lý (Inference + Segmentation)...' }}
+            {{ 
+              processingState === 'uploading' ? 'Đang Upload Video...' : 
+              processingState === 'processing' ? 'Đang xử lý (Inference + SOP)...' : 
+              'Đang render video cuối cùng...'
+            }}
           </span>
           <span class="percentage" *ngIf="processingState === 'uploading'">{{ uploadProgress }}%</span>
         </div>
         <div class="progress-bar">
-          <div class="progress-fill" [style.width.%]="uploadProgress" [class.indeterminate]="processingState === 'processing'"></div>
+          <div class="progress-fill" [style.width.%]="uploadProgress" [class.indeterminate]="processingState === 'processing' || processingState === 'rendering'"></div>
         </div>
       </div>
 
@@ -33,11 +37,39 @@
       </div>
     </div>
 
+    <!-- Action Editing Modal/Section -->
+    <div class="editing-section" *ngIf="processingState === 'editing'">
+      <h3>Danh sách hành động được nhận diện</h3>
+      <p class="help-text">Chọn nhiều hành động để gộp (Merge) hoặc đổi tên hành động.</p>
+      
+      <div class="actions-list">
+        <div class="action-item" *ngFor="let action of actions; let i = index" 
+             [class.selected]="selectedActionIndices.includes(i)">
+          <div class="action-checkbox">
+            <input type="checkbox" [checked]="selectedActionIndices.includes(i)" (change)="toggleActionSelection(i)">
+          </div>
+          <div class="action-details">
+            <input type="text" [value]="action.action_id" #nameInput (blur)="renameAction(i, nameInput.value)">
+            <span class="action-frames">Frame: {{ action.start_frame }} - {{ action.end_frame }}</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="editing-controls">
+        <button class="btn btn-secondary" [disabled]="selectedActionIndices.length < 2" (click)="mergeActions()">
+          Merge Selected
+        </button>
+        <button class="btn btn-primary" (click)="onRender()">
+          Confirm & Render Video
+        </button>
+      </div>
+    </div>
+
     <!-- Actions -->
     <div class="action-buttons">
       <button 
         class="btn btn-primary" 
-        [disabled]="!selectedFile || processingState === 'uploading' || processingState === 'processing'"
+        [disabled]="!selectedFile || processingState === 'uploading' || processingState === 'processing' || processingState === 'rendering'"
         (click)="onUpload()"
         *ngIf="processingState === 'idle' || processingState === 'error'">
         Bắt đầu xử lý
@@ -52,9 +84,9 @@
       
       <button 
         class="btn btn-secondary" 
-        *ngIf="processingState === 'done'"
-        (click)="selectedFile = null; resultVideoUrl = null; processingState = 'idle'">
-        Xử lý video khác
+        *ngIf="processingState === 'done' || processingState === 'editing'"
+        (click)="selectedFile = null; resultVideoUrl = null; processingState = 'idle'; actions = []; fileId = null;">
+        Hủy / Xử lý video khác
       </button>
     </div>
   </div>
