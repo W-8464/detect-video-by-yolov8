@@ -11,8 +11,8 @@ import yaml
 # - ROI model: detect shielding/gasket/bracket trong ROI (in-hand)
 # - Pose model: detect hand keypoints
 ROOT = Path(__file__).resolve().parent
-full_model_path = str((ROOT / 'runs/obb/action_model_v10/weights/best.pt').resolve())
-roi_model_path = str((ROOT / 'runs/obb/action_model_roi_v5/weights/best.pt').resolve())
+full_model_path = str((ROOT / 'runs/obb/obb_full_frame_v1/weights/best.pt').resolve())
+roi_model_path = str((ROOT / 'runs/obb/obb_roi_v1/weights/best.pt').resolve())
 pose_model_path = str((ROOT / 'runs/pose/pose_hand_v7/weights/best.pt').resolve())
 
 full_model = YOLO(full_model_path)
@@ -99,9 +99,18 @@ LINER_CLS = CLASS_NAME_TO_ID.get("liner", 4)
 TWEEZERS_CLS = CLASS_NAME_TO_ID.get("tweezers", 5)
 PCIE_CABLE_CLS = CLASS_NAME_TO_ID.get("PCIe cable", 7)
 BRACKET_CLS = CLASS_NAME_TO_ID.get("bracket", 9)
+HEATSINK_CLS = CLASS_NAME_TO_ID.get("heatsink", 10)
+SCREW_CLS = CLASS_NAME_TO_ID.get("screw", 11)
+SCREW_DRIVER_CLS = CLASS_NAME_TO_ID.get("screw driver", 12)
+SCREW_MACHINE_CLS = CLASS_NAME_TO_ID.get("screw machine", 13)
+FIXTURE_CLS = CLASS_NAME_TO_ID.get("fixture", 14)
 
 # Các class muốn track/vẽ từ full-frame model
-TRACK_FROM_FULL = [HAND_CLS, TWEEZERS_CLS, TRAY_CLS, BOARD_CLS, JIG_CLS, LINER_CLS, PCIE_CABLE_CLS, BRACKET_CLS]
+TRACK_FROM_FULL = [
+    HAND_CLS, TWEEZERS_CLS, TRAY_CLS, BOARD_CLS, JIG_CLS, LINER_CLS,
+    PCIE_CABLE_CLS, BRACKET_CLS, HEATSINK_CLS, SCREW_CLS,
+    SCREW_DRIVER_CLS, SCREW_MACHINE_CLS, FIXTURE_CLS
+]
 
 # Khi log, ta in conf các class này; shielding/gasket vẫn áp dụng threshold riêng bên dưới.
 LOG_FROM_FULL = set(TRACK_FROM_FULL) | ROI_SMALL_CLASSES
@@ -111,7 +120,7 @@ def parse_args():
     parser.add_argument(
         "--input",
         type=str,
-        default=str((ROOT / "datasets/xb10_2_8_cut.mp4").resolve()),
+        default=str((ROOT / "datasets/xb10_5_2.mp4").resolve()),
         help="Input video path",
     )
     parser.add_argument(

@@ -17,6 +17,10 @@ actions:
             subject: "Target"
             history_len: 15
             min_iou: 0.75
+          - type: "not_iou"
+            subject: "hand"
+            target: "screw driver"
+            max_thr: 0.05
         hold_frames: 3
         grace_miss: 20
       - id: "component_placed_on_target"
@@ -48,8 +52,14 @@ actions:
                 subject: "hand"
                 target: "Container"
                 min_thr: 0.40
+              - type: "iou"
+                subject: "hand"
+                target: "screw driver"
+                min_thr: 0.10
         hold_frames: 10
         grace_miss: 20
+        wait_for_flip: true
+        min_false_frames: 3
 
     score_rules:
       spatial:

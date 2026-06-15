@@ -132,6 +132,7 @@ def main() -> None:
     ap.add_argument("--stride", type=int, default=1, help="Process every Nth image to reduce near-duplicates.")
     ap.add_argument("--seed", type=int, default=0, help="Random seed for sampling negatives.")
     ap.add_argument("--max-images", type=int, default=0, help="Optional cap per split (0=all).")
+    ap.add_argument("--target-small", default="6,8", help="Comma-separated class ids that should trigger a positive ROI.")
     args = ap.parse_args()
 
     random.seed(args.seed)
@@ -142,9 +143,9 @@ def main() -> None:
     splits = [s.strip() for s in args.splits.split(",") if s.strip()]
 
     keep_classes = {int(x.strip()) for x in args.keep_classes.split(",") if x.strip()}
+    target_small = {int(x.strip()) for x in args.target_small.split(",") if x.strip()}
     hand_cls = args.hand_cls
     tweezers_cls = args.tweezers_cls
-    target_small = {args.shielding_cls, args.gasket_cls}
 
     # Prepare output dirs
     for sp in splits:

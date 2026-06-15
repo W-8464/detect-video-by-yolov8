@@ -64,10 +64,10 @@ global:
   tuning:
     conf_threshold: 0.55
     max_window_frames: 300
-    rearm_frames: 5
+    rearm_frames: 10
     phase_start_wait_frames: 220
     semantic_lookback_frames: 300
-    attach_anchor_max_gap_frames: 150
+    attach_anchor_max_gap_frames: 90
     gasket_attach_max_gap_frames: 220
     min_take_gasket_span_frames: 25
     scan_stride: 4
@@ -137,7 +137,7 @@ actions:
         history_len: 8
         min_frames: 3
     hold_frames: 4
-    grace_miss: 10
+    grace_miss: 20
   - id: hand_leaves_container_or_enters_target
     conditions:
     - type: or
@@ -151,7 +151,7 @@ actions:
         target: Target
         min_thr: 0.3
     hold_frames: 3
-    grace_miss: 10
+    grace_miss: 20
   score_rules:
     spatial:
       subject: hand
@@ -181,13 +181,13 @@ actions:
     - type: contain
       subject: hand
       target: Target
-      min_thr: 0.3
+      min_thr: 0.2
     - type: stationary
       subject: Target
       history_len: 15
-      min_iou: 0.85
+      min_iou: 0.75
     hold_frames: 3
-    grace_miss: 15
+    grace_miss: 20
   - id: component_placed_on_target
     conditions:
     - type: or
@@ -215,7 +215,7 @@ actions:
         target: Container
         min_thr: 0.4
     hold_frames: 10
-    grace_miss: 15
+    grace_miss: 20
   score_rules:
     spatial:
       subject: hand
@@ -228,68 +228,8 @@ actions:
       min_frames: 5
       max_frames: 40
       weight: 0.5
-- id: take_shielding_2
-  description: 'Nhóm tác vụ độc lập: Lấy 1 kiện từ khay kéo ra khỏi khay. (lần 2)'
-  max_action_frames: 0
-  timer_start_phase: 0
-  phases:
-  - id: hand_enters_container_but_not_target
-    conditions:
-    - type: contain
-      subject: hand
-      target: Container
-      min_thr: 0.35
-    - type: not_contain
-      subject: hand
-      target: Target
-      max_thr: 0.3
-    - type: or
-      sub_conditions:
-      - type: iou
-        subject: hand
-        target: Component
-        min_thr: 0.005
-      - type: history_exists
-        subject: Component
-        history_len: 8
-        min_frames: 3
-    hold_frames: 4
-    grace_miss: 10
-  - id: hand_leaves_container_or_enters_target
-    conditions:
-    - type: or
-      sub_conditions:
-      - type: not_contain
-        subject: hand
-        target: Container
-        max_thr: 0.3
-      - type: contain
-        subject: hand
-        target: Target
-        min_thr: 0.3
-    hold_frames: 3
-    grace_miss: 10
-  score_rules:
-    spatial:
-      subject: hand
-      target: Container
-      weight: 1.0
-    temporal:
-      subject: hand
-      target: Container
-      threshold: 0.3
-      min_frames: 5
-      max_frames: 40
-      weight: 0.5
-    verification:
-      effector: hand
-      component: Component
-      post_frames: 60
-      min_hits: 3
-      weight: 3.0
-      prerequisite: true
-- id: take_gasket_3
-  description: Lay gasket bang tweezers/hand tu liner hoac tray. (lần 3)
+- id: take_gasket_2
+  description: Lay gasket bang tweezers/hand tu liner hoac tray. (lần 2)
   max_action_frames: 0
   timer_start_phase: 0
   phases:
@@ -324,50 +264,33 @@ actions:
     grace_miss: 40
   - id: gasket_leaves_source
     conditions:
-    - type: or
+    - type: and
       sub_conditions:
-      - type: and
+      - type: or
         sub_conditions:
-        - type: or
-          sub_conditions:
-          - type: iou
-            subject: tweezers
-            target: gasket
-            min_thr: 0.01
-          - type: iou
-            subject: hand
-            target: gasket
-            min_thr: 0.01
-          - type: same_roi
-            subject: tweezers
-            target: gasket
-        - type: not_contain
+        - type: iou
           subject: tweezers
-          target: liner
-          max_thr: 0.05
-      - type: and
-        sub_conditions:
-        - type: or
-          sub_conditions:
-          - type: iou
-            subject: tweezers
-            target: gasket
-            min_thr: 0.01
-          - type: iou
-            subject: hand
-            target: gasket
-            min_thr: 0.01
-          - type: same_roi
-            subject: tweezers
-            target: gasket
-        - type: not_contain
+          target: gasket
+          min_thr: 0.01
+        - type: iou
+          subject: hand
+          target: gasket
+          min_thr: 0.01
+        - type: same_roi
           subject: tweezers
-          target: tray
-          max_thr: 0.05
-    hold_frames: 8
+          target: gasket
+      - type: not_contain
+        subject: tweezers
+        target: liner
+        max_thr: 0.05
+      - type: not_contain
+        subject: tweezers
+        target: tray
+        max_thr: 0.05
+    hold_frames: 15
     grace_miss: 60
-- id: attach_shielding_and_gasket_2_and_3
-  description: 'Nhóm tác vụ độc lập: Gắn linh kiện lên đích. (lần 2_and_3)'
+- id: attach_gasket_2
+  description: 'Nhóm tác vụ độc lập: Gắn linh kiện lên đích. (lần 2)'
   max_action_frames: 180
   timer_start_phase: 1
   phases:
@@ -376,13 +299,13 @@ actions:
     - type: contain
       subject: hand
       target: Target
-      min_thr: 0.3
+      min_thr: 0.2
     - type: stationary
       subject: Target
       history_len: 15
-      min_iou: 0.85
+      min_iou: 0.75
     hold_frames: 3
-    grace_miss: 15
+    grace_miss: 20
   - id: component_placed_on_target
     conditions:
     - type: or
@@ -410,7 +333,7 @@ actions:
         target: Container
         min_thr: 0.4
     hold_frames: 10
-    grace_miss: 15
+    grace_miss: 20
   score_rules:
     spatial:
       subject: hand
@@ -461,7 +384,7 @@ actions:
     hold_frames: 4
     grace_miss: 10
 _inference_meta:
-  total_matches: 7
+  total_matches: 6
   matches:
   - action_id: put_board_into_jig_1
     source_template: put_board.yaml
@@ -477,26 +400,20 @@ _inference_meta:
     confidence: 1.0
   - action_id: attach_PCIe_cable_1
     source_template: attach_only.yaml
-    start_frame: 304
-    match_start_frame: 285
-    end_frame: 423
+    start_frame: 386
+    match_start_frame: 293
+    end_frame: 420
     confidence: 1.0
-  - action_id: take_shielding_2
-    source_template: take_only.yaml
-    start_frame: 537
-    match_start_frame: 317
-    end_frame: 545
-    confidence: 1.0
-  - action_id: take_gasket_3
+  - action_id: take_gasket_2
     source_template: take_gasket.yaml
-    start_frame: 600
-    match_start_frame: 517
-    end_frame: 614
+    start_frame: 421
+    match_start_frame: 421
+    end_frame: 509
     confidence: 1.0
-  - action_id: attach_shielding_and_gasket_2_and_3
+  - action_id: attach_gasket_2
     source_template: attach_only.yaml
     start_frame: 660
-    match_start_frame: 625
+    match_start_frame: 657
     end_frame: 738
     confidence: 1.0
   - action_id: board_back_to_conveyor_1

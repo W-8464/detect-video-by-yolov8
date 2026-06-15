@@ -6,13 +6,17 @@ global:
       - "PCIe cable"
       - "shielding"
       - "gasket"
+      - "heatsink"
+      - "screw"
     Tool:
       - "tweezers"
+      - "screw driver"
     Target:
       - "board"
       - "bracket"
     Container:
       - "tray"
+      - "screw machine"
 
   class_colors:
     hand:       [0, 255, 0]
@@ -25,12 +29,28 @@ global:
     PCIe cable: [255, 0, 255]
     gasket:     [128, 0, 255]
     bracket:    [0, 128, 255]
+    heatsink:   [200, 100, 50]
+    screw:      [150, 150, 150]
+    "screw driver": [100, 200, 100]
+    "screw machine": [100, 100, 200]
+    fixture:    [50, 50, 50]
 
   roi_model_mapping:
     0: hand
-    1: tweezers
-    2: shielding
-    3: gasket
+    1: tray
+    2: board
+    3: jig
+    4: liner
+    5: tweezers
+    6: shielding
+    7: PCIe cable
+    8: gasket
+    9: bracket
+    10: heatsink
+    11: screw
+    12: "screw driver"
+    13: "screw machine"
+    14: fixture
 
   roi_small_classes:
     - shielding
@@ -38,6 +58,7 @@ global:
 
   tuning:
     conf_threshold: 0.55
+    min_match_frames: 10
     max_window_frames: 300
     rearm_frames: 10
     phase_start_wait_frames: 220

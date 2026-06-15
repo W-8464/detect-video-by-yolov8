@@ -60,7 +60,7 @@
           Merge Selected
         </button>
         <button class="btn btn-primary" (click)="onRender()">
-          Confirm & Render Video
+          Confirm & Render Final
         </button>
       </div>
     </div>
@@ -86,7 +86,7 @@
         class="btn btn-secondary" 
         *ngIf="processingState === 'done' || processingState === 'editing'"
         (click)="selectedFile = null; resultVideoUrl = null; processingState = 'idle'; actions = []; fileId = null;">
-        Hủy / Xử lý video khác
+        Xử lý video khác
       </button>
     </div>
   </div>

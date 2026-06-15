@@ -17,8 +17,10 @@ export class VideoProcessorComponent {
   
   // Action management
   fileId: string | null = null;
+  folderName: string | null = null;
   actions: any[] = [];
   selectedActionIndices: number[] = [];
+  hasChanges: boolean = false;
 
   constructor(private http: HttpClient) {}
 
@@ -30,6 +32,8 @@ export class VideoProcessorComponent {
       this.processingState = 'idle';
       this.actions = [];
       this.fileId = null;
+      this.folderName = null;
+      this.hasChanges = false;
     }
   }
 
@@ -38,11 +42,12 @@ export class VideoProcessorComponent {
 
     this.processingState = 'uploading';
     this.uploadProgress = 0;
+    this.hasChanges = false;
     
     const formData = new FormData();
     formData.append('video', this.selectedFile);
 
-    this.http.post<{ fileId: string, actions: any[] }>('/api/video/process', formData, {
+    this.http.post<{ fileId: string, folderName: string, actions: any[] }>('/api/video/process', formData, {
       reportProgress: true,
       observe: 'events'
     }).pipe(
@@ -60,7 +65,9 @@ export class VideoProcessorComponent {
         }
       } else if (event.type === 4) { // HttpEventType.Response
         this.fileId = event.body.fileId;
+        this.folderName = event.body.folderName;
         this.actions = event.body.actions;
+        this.resultVideoUrl = event.body.resultUrl; // Initial SOP video
         this.processingState = 'editing';
       }
     });
@@ -79,26 +86,22 @@ export class VideoProcessorComponent {
   mergeActions(): void {
     if (this.selectedActionIndices.length < 2) return;
 
+    this.hasChanges = true;
     const firstIdx = this.selectedActionIndices[0];
     const lastIdx = this.selectedActionIndices[this.selectedActionIndices.length - 1];
     
-    // Check if they are contiguous in the current actions list
-    // Actually, user said merge regardless of idle in between
     const newAction = {
       action_id: 'merged_action',
       start_frame: this.actions[firstIdx].start_frame,
       end_frame: this.actions[lastIdx].end_frame
     };
 
-    // Remove old actions and insert new one
     const newActionsList = [...this.actions];
-    // We need to remove from highest index to lowest to maintain indices
     const sortedIndices = [...this.selectedActionIndices].sort((a, b) => b - a);
     for (const idx of sortedIndices) {
       newActionsList.splice(idx, 1);
     }
     
-    // Insert at the position of the first selected action
     newActionsList.splice(firstIdx, 0, newAction);
     
     this.actions = newActionsList;
@@ -106,18 +109,28 @@ export class VideoProcessorComponent {
   }
 
   renameAction(index: number, newName: string): void {
-    if (newName && newName.trim()) {
+    if (newName && newName.trim() && this.actions[index].action_id !== newName.trim()) {
       this.actions[index].action_id = newName.trim();
+      this.hasChanges = true;
     }
   }
 
   onRender(): void {
-    if (!this.fileId || this.actions.length === 0) return;
+    if (!this.fileId || !this.folderName || this.actions.length === 0) return;
 
     this.processingState = 'rendering';
     
+    if (!this.hasChanges) {
+        // No changes, just wait a bit and show the existing SOP video
+        setTimeout(() => {
+            this.processingState = 'done';
+        }, 1500);
+        return;
+    }
+
     this.http.post<{ resultUrl: string }>('/api/video/render', {
       file_id: this.fileId,
+      folder_name: this.folderName,
       actions: this.actions
     }).pipe(
       catchError(error => {

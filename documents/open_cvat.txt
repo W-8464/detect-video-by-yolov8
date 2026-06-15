@@ -2,4 +2,4 @@ docker compose up -d
 
 source /home/admin/my_yolo_project/venv/bin/activate
 
-python dynamic_sop_builder.py   --video datasets/xb10_2_8.mp4   --detections xb10_2_8_detections.jsonl   --global-config sop_global_shared.yaml   --templates put_board.yaml take_only.yaml take_gasket.yaml apply_gasket_to_shielding.yaml attach_gasket_payload_to_board.yaml attach_only.yaml return_board.yaml   --output sop_inferred_xb10_2_8.yaml --overlay-output xb10_2_8_timer_overlay.mp4
+python dynamic_sop_builder.py   --video datasets/xb10_1_13.mp4   --detections xb10_1_13_detections.jsonl   --global-config sop_global_shared.yaml   --templates put_board.yaml take_only.yaml take_gasket.yaml apply_gasket_to_shielding.yaml attach_gasket_payload_to_board.yaml attach_only.yaml return_board.yaml   --output sop_inferred_xb10_1_13.yaml --overlay-output xb10_1_13_timer_overlay.mp4

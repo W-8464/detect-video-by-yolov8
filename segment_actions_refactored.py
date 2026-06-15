@@ -21,6 +21,14 @@ class Detection:
 def aabb(poly: np.ndarray) -> Tuple[float, float, float, float]:
     return float(poly[:, 0].min()), float(poly[:, 1].min()), float(poly[:, 0].max()), float(poly[:, 1].max())
 
+def aabb_region(poly: np.ndarray, region: Optional[str] = None) -> Tuple[float, float, float, float]:
+    x1, y1, x2, y2 = aabb(poly)
+    if region == "bottom_third":
+        y1 = y1 + (y2 - y1) * 2.0 / 3.0
+    elif region == "top_third":
+        y2 = y1 + (y2 - y1) / 3.0
+    return x1, y1, x2, y2
+
 def iou_aabb(a: Tuple[float, float, float, float], b: Tuple[float, float, float, float]) -> float:
     ax1, ay1, ax2, ay2 = a
     bx1, by1, bx2, by2 = b
@@ -97,6 +105,8 @@ def evaluate_condition(dets: List[Detection], cond: dict, class_groups: dict = N
         
     subj_classes = get_classes(cond.get("subject"))
     tgt_classes = get_classes(cond.get("target"))
+    subj_region = cond.get("subject_region")
+    tgt_region = cond.get("target_region")
 
     if c_type == "exists":
         return any(d.cls in subj_classes for d in dets)
@@ -265,36 +275,36 @@ def evaluate_condition(dets: List[Detection], cond: dict, class_groups: dict = N
     
     if c_type == "contain":
         for s in subjs:
-            s_box = aabb(s.poly)
+            s_box = aabb_region(s.poly, subj_region)
             for t in tgts:
-                t_box = aabb(t.poly)
+                t_box = aabb_region(t.poly, tgt_region)
                 if contain_ratio_aabb(s_box, t_box) >= float(cond.get("min_thr", 0.5)):
                     return True
         return False
         
     elif c_type == "not_contain":
         for s in subjs:
-            s_box = aabb(s.poly)
+            s_box = aabb_region(s.poly, subj_region)
             for t in tgts:
-                t_box = aabb(t.poly)
+                t_box = aabb_region(t.poly, tgt_region)
                 if contain_ratio_aabb(s_box, t_box) >= float(cond.get("max_thr", 0.1)):
                     return False
         return True
         
     elif c_type == "iou":
         for s in subjs:
-            s_box = aabb(s.poly)
+            s_box = aabb_region(s.poly, subj_region)
             for t in tgts:
-                t_box = aabb(t.poly)
+                t_box = aabb_region(t.poly, tgt_region)
                 if iou_aabb(s_box, t_box) >= float(cond.get("min_thr", 0.05)):
                     return True
         return False
         
     elif c_type == "not_iou":
         for s in subjs:
-            s_box = aabb(s.poly)
+            s_box = aabb_region(s.poly, subj_region)
             for t in tgts:
-                t_box = aabb(t.poly)
+                t_box = aabb_region(t.poly, tgt_region)
                 if iou_aabb(s_box, t_box) > float(cond.get("max_thr", 0.05)):
                     return False
         return True

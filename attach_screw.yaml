@@ -1,0 +1,46 @@
+global:
+  handoff_prev_end_to_next_start: true
+
+actions:
+  - id: attach_screw
+    description: "Tác vụ: Bắn vít (cầm screw driver lấy vít từ screw machine và bắn lên fixture)."
+    max_action_frames: 300
+    timer_start_phase: 1
+    phases:
+      - id: "driver_at_screw_machine"
+        conditions:
+          - type: "and"
+            sub_conditions:
+              - type: "iou"
+                subject: "hand"
+                target: "screw driver"
+                min_thr: 0.05
+              - type: "iou"
+                subject: "screw driver"
+                subject_region: "bottom_third"
+                target: "screw machine"
+                min_thr: 0.02
+        hold_frames: 3
+        grace_miss: 15
+
+      - id: "driver_at_fixture"
+        conditions:
+          - type: "iou"
+            subject: "screw driver"
+            subject_region: "bottom_third"
+            target: "fixture"
+            min_thr: 0.02
+        hold_frames: 3
+        grace_miss: 20
+
+      - id: "driver_leaves_fixture"
+        conditions:
+          - type: "not_iou"
+            subject: "screw driver"
+            subject_region: "bottom_third"
+            target: "fixture"
+            max_thr: 0.02
+        hold_frames: 5
+        grace_miss: 15
+        wait_for_flip: true
+        min_false_frames: 3

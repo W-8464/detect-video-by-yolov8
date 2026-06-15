@@ -1,0 +1,295 @@
+global:
+  handoff_prev_end_to_next_start: true
+  class_groups:
+    Component:
+    - PCIe cable
+    - shielding
+    - gasket
+    - heatsink
+    - screw
+    Tool:
+    - tweezers
+    - screw driver
+    Target:
+    - board
+    - bracket
+    Container:
+    - tray
+    - screw machine
+  class_colors:
+    hand:
+    - 0
+    - 255
+    - 0
+    tray:
+    - 255
+    - 0
+    - 0
+    board:
+    - 0
+    - 0
+    - 255
+    jig:
+    - 255
+    - 255
+    - 0
+    liner:
+    - 0
+    - 255
+    - 255
+    tweezers:
+    - 128
+    - 255
+    - 128
+    shielding:
+    - 255
+    - 128
+    - 0
+    PCIe cable:
+    - 255
+    - 0
+    - 255
+    gasket:
+    - 128
+    - 0
+    - 255
+    bracket:
+    - 0
+    - 128
+    - 255
+    heatsink:
+    - 200
+    - 100
+    - 50
+    screw:
+    - 150
+    - 150
+    - 150
+    screw driver:
+    - 100
+    - 200
+    - 100
+    screw machine:
+    - 100
+    - 100
+    - 200
+    fixture:
+    - 50
+    - 50
+    - 50
+  roi_model_mapping:
+    0: hand
+    1: tray
+    2: board
+    3: jig
+    4: liner
+    5: tweezers
+    6: shielding
+    7: PCIe cable
+    8: gasket
+    9: bracket
+    10: heatsink
+    11: screw
+    12: screw driver
+    13: screw machine
+    14: fixture
+  roi_small_classes:
+  - shielding
+  - gasket
+  tuning:
+    conf_threshold: 0.55
+    min_match_frames: 10
+    max_window_frames: 300
+    rearm_frames: 10
+    phase_start_wait_frames: 220
+    semantic_lookback_frames: 300
+    attach_anchor_max_gap_frames: 90
+    gasket_attach_max_gap_frames: 220
+    min_take_gasket_span_frames: 25
+    scan_stride: 4
+    roi_pad: 1.6
+    return_role_threshold_offset: 0.1
+    pose:
+      imgsz: 416
+      conf: 0.25
+      iou: 0.5
+      kpts_smooth_alpha: 0.7
+      kpts_display_conf: 0.3
+actions:
+- id: take_heatsink_1
+  description: 'Nhóm tác vụ độc lập: Lấy 1 kiện từ khay kéo ra khỏi khay. (lần 1)'
+  max_action_frames: 0
+  timer_start_phase: 0
+  phases:
+  - id: hand_enters_container_but_not_target
+    conditions:
+    - type: contain
+      subject: hand
+      target: Container
+      min_thr: 0.35
+    - type: not_contain
+      subject: hand
+      target: Target
+      max_thr: 0.3
+    - type: or
+      sub_conditions:
+      - type: iou
+        subject: hand
+        target: Component
+        min_thr: 0.005
+      - type: history_exists
+        subject: Component
+        history_len: 8
+        min_frames: 3
+    hold_frames: 4
+    grace_miss: 20
+  - id: hand_leaves_container_or_enters_target
+    conditions:
+    - type: or
+      sub_conditions:
+      - type: not_contain
+        subject: hand
+        target: Container
+        max_thr: 0.3
+      - type: contain
+        subject: hand
+        target: Target
+        min_thr: 0.3
+    hold_frames: 3
+    grace_miss: 20
+  score_rules:
+    spatial:
+      subject: hand
+      target: Container
+      weight: 1.0
+    temporal:
+      subject: hand
+      target: Container
+      threshold: 0.3
+      min_frames: 5
+      max_frames: 40
+      weight: 0.5
+    verification:
+      effector: hand
+      component: Component
+      post_frames: 60
+      min_hits: 3
+      weight: 3.0
+      prerequisite: true
+- id: attach_heatsink_1
+  description: 'Nhóm tác vụ độc lập: Gắn linh kiện lên đích. (lần 1)'
+  max_action_frames: 180
+  timer_start_phase: 1
+  phases:
+  - id: hand_moves_to_target
+    conditions:
+    - type: contain
+      subject: hand
+      target: Target
+      min_thr: 0.2
+    - type: stationary
+      subject: Target
+      history_len: 15
+      min_iou: 0.75
+    hold_frames: 3
+    grace_miss: 20
+  - id: component_placed_on_target
+    conditions:
+    - type: or
+      sub_conditions:
+      - type: contain
+        subject: Component
+        target: Target
+        min_thr: 0.2
+      - type: history_exists
+        subject: Component
+        history_len: 10
+        min_frames: 1
+    hold_frames: 3
+    grace_miss: 15
+  - id: hand_leaves_target_or_enters_container
+    conditions:
+    - type: or
+      sub_conditions:
+      - type: not_contain
+        subject: hand
+        target: Target
+        max_thr: 0.2
+      - type: contain
+        subject: hand
+        target: Container
+        min_thr: 0.4
+    hold_frames: 10
+    grace_miss: 20
+    wait_for_flip: true
+    min_false_frames: 3
+  score_rules:
+    spatial:
+      subject: hand
+      target: Target
+      weight: 1.0
+    temporal:
+      subject: hand
+      target: Target
+      threshold: 0.3
+      min_frames: 5
+      max_frames: 40
+      weight: 0.5
+- id: board_back_to_conveyor_1
+  description: 'Nhóm tác vụ độc lập: Lấy board đặt lại chuyền. (Chỉ tính giờ từ khi
+    board TỪ TRONG jig bắt đầu bị rút ra) (lần 1)'
+  max_action_frames: 0
+  timer_start_phase: 1
+  phases:
+  - id: board_stable_in_jig_or_static
+    conditions:
+    - type: or
+      sub_conditions:
+      - type: contain
+        subject: Target
+        target: jig
+        min_thr: 0.9
+      - type: stationary
+        subject: Target
+        history_len: 10
+        min_iou: 0.85
+    hold_frames: 30
+  - id: board_starts_leaving_stable_state
+    conditions:
+    - type: or
+      sub_conditions:
+      - type: not_contain
+        subject: Target
+        target: jig
+        max_thr: 0.88
+      - type: missing
+        subject: Target
+    hold_frames: 15
+    grace_miss: 30
+  - id: board_missing_from_camera
+    conditions:
+    - type: missing
+      subject: Target
+    hold_frames: 4
+    grace_miss: 10
+_inference_meta:
+  total_matches: 3
+  matches:
+  - action_id: take_heatsink_1
+    source_template: take_only.yaml
+    start_frame: 105
+    match_start_frame: 81
+    end_frame: 116
+    confidence: 1.0
+  - action_id: attach_heatsink_1
+    source_template: attach_only.yaml
+    start_frame: 118
+    match_start_frame: 117
+    end_frame: 628
+    confidence: 1.0
+  - action_id: board_back_to_conveyor_1
+    source_template: return_board.yaml
+    start_frame: 629
+    match_start_frame: 381
+    end_frame: 647
+    confidence: 1.0

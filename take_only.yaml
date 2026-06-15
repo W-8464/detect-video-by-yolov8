@@ -30,10 +30,10 @@ actions:
                 subject: "hand"
                 target: "Component"
                 min_thr: 0.005
-              - type: "history_exists"
-                subject: "Component"
-                history_len: 8
-                min_frames: 3
+              # - type: "history_exists"
+              #   subject: "Component"
+              #   history_len: 8
+              #   min_frames: 3
         hold_frames: 4
         grace_miss: 20
       - id: "hand_leaves_container_or_enters_target"

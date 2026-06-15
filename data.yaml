@@ -1,7 +1,7 @@
 train: datasets/yolo_format/images/train
 val: datasets/yolo_format/images/val
 
-nc: 10
+nc: 15
 
 names: [
   'hand',
@@ -13,5 +13,10 @@ names: [
   'shielding',
   'PCIe cable',
   'gasket',
-  'bracket'
+  'bracket',
+  'heatsink',
+  'screw',
+  'screw driver',
+  'screw machine',
+  'fixture'
 ]

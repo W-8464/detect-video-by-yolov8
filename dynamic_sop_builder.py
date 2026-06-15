@@ -170,6 +170,7 @@ class ActionTemplate:
         _tuning = tuning or {}
         self.phase_start_wait_frames = int(_tuning.get("phase_start_wait_frames", DEFAULT_TUNING["phase_start_wait_frames"]))
         self.semantic_lookback_frames = int(_tuning.get("semantic_lookback_frames", DEFAULT_TUNING["semantic_lookback_frames"]))
+        self.min_match_frames = int(_tuning.get("min_match_frames", DEFAULT_TUNING["min_match_frames"]))
 
     def try_match(
         self,
@@ -222,6 +223,7 @@ class ActionTemplate:
                     if missed_streak > grace:
                         return actual_start_cursor, cursor, 0.0, timer_start_cursor, None
                 cursor += 1
+
 
             if matched_frames < hold:
                 return actual_start_cursor, cursor, 0.0, timer_start_cursor, None
@@ -352,7 +354,7 @@ class ActionTemplate:
         # Phase A: which components were inside Container at action start?
         # A component that was never in the tray cannot be "taken from tray".
         was_in_container: Dict[str, bool] = {}
-        for i in range(action_start, min(total_frames, action_start + 15)):
+        for i in range(action_start, min(total_frames, action_start + self.min_match_frames)):
             frame_dets = frames[i]
             container_dets = [d for d in frame_dets if d.cls in container_classes]
             for c in frame_dets:
@@ -437,7 +439,7 @@ class DynamicSOPBuilder:
 
         self.conf_threshold = conf_threshold if conf_threshold is not None else float(_tuning.get("conf_threshold", DEFAULT_TUNING["conf_threshold"]))
         self.min_det_conf = float(_tuning.get("min_det_conf", DEFAULT_TUNING["min_det_conf"]))
-        self.min_match_frames = 15 # Increased from 5 to filter noise fragments
+        self.min_match_frames = int(_tuning.get("min_match_frames", DEFAULT_TUNING["min_match_frames"]))
         self.max_window_frames = max_window_frames if max_window_frames is not None else int(_tuning.get("max_window_frames", DEFAULT_TUNING["max_window_frames"]))
         self.rearm_frames = int(_tuning.get("rearm_frames", DEFAULT_TUNING["rearm_frames"]))
         self.scan_stride = int(_tuning.get("scan_stride", DEFAULT_TUNING["scan_stride"]))
@@ -1182,7 +1184,7 @@ class DynamicSOPBuilder:
             # --- Option B: scan attach range for early phase0 hit of next take ---
             if frames is not None and inherited_groups is not None:
                 # Skip a small offset from attach start to avoid boundary noise.
-                min_offset = 15
+                min_offset = self.min_match_frames
                 scan_from = max(0, cur_start - 1 + min_offset)  # 0-based index
                 scan_to = min(len(frames), cur_end)              # exclusive
 
@@ -1417,6 +1419,110 @@ class DynamicSOPBuilder:
                     return True
         return False
 
+    def _refine_attach_end_by_flip(
+        self,
+        sequence: List[Dict[str, Any]],
+        frames: List[List[Detection]],
+        inherited_groups: Dict[str, List[str]],
+    ) -> List[Dict[str, Any]]:
+        """Post-processing: extend attach actions whose last phase has
+        ``wait_for_flip: true``.
+
+        Strategy: use phase-0 conditions (hand IS on target) as the
+        "action ongoing" signal instead of the termination condition.
+
+        The termination condition (hand NOT on target) may be TRUE from the
+        start if the hand's OBB overlap with the board is very low (< 0.2).
+        
+        Instead, we check phase-0 (hand_moves_to_target): as long as
+        this condition is met, the action is still ongoing.  When it stops
+        being met for ``hold_frames`` frames (from the last phase), the
+        worker's hand has left → action ended.
+
+        1. From the action's timer-start, scan forward.
+        2. Track the LAST frame where phase-0 condition was TRUE.
+        3. End the action = last_true_frame + hold_frames (from last phase),
+           capped by the next action's start.
+        """
+        out = [dict(p) for p in sequence]
+
+        for i, item in enumerate(out):
+            tmpl: ActionTemplate = item["template"]
+            if tmpl.base_id not in ("attach_component", "attach_only"):
+                continue
+
+            phases = tmpl.action.get("phases", [])
+            if len(phases) < 2:
+                continue
+
+            last_phase = phases[-1]
+            if not last_phase.get("wait_for_flip", False):
+                continue
+
+            # Use phase-0 conditions as the "ongoing" signal
+            phase0 = phases[0]
+            phase0_conds = phase0.get("conditions", [])
+            # hold_frames from the last phase = confirmation period after hand leaves
+            tail_hold = max(1, int(last_phase.get("hold_frames", 1)))
+
+            class_groups = dict(inherited_groups)
+            class_groups.update(tmpl.global_cfg.get("class_groups", {}))
+
+            # Scan range – cap at the earliest ordering_start of any
+            # subsequent action (not just out[i+1], since array order may
+            # differ from temporal order due to scan-window start vs timer).
+            scan_start_0 = max(
+                0,
+                int(item.get("timer_start_frame",
+                             item.get("semantic_start_frame",
+                                      item["start_frame"]))) - 1,
+            )
+            cur_ord = self._ordering_start(item)
+            min_next_start_1 = len(frames) + 1
+            for j in range(len(out)):
+                if j == i:
+                    continue
+                j_ord = self._ordering_start(out[j])
+                if j_ord > cur_ord and j_ord < min_next_start_1:
+                    min_next_start_1 = j_ord
+            max_end_0 = min(len(frames), min_next_start_1 - 1)
+
+            # Scan: find the last frame where phase-0 is TRUE
+            last_phase0_true_idx = -1
+            grace0 = max(0, int(phase0.get("grace_miss", 0)))
+            miss_since_true = 0
+
+            for idx in range(scan_start_0, max_end_0):
+                history = frames[max(0, idx - 30):idx]
+                p0_met = all(
+                    evaluate_condition(frames[idx], c, class_groups, history)
+                    for c in phase0_conds
+                )
+                if p0_met:
+                    last_phase0_true_idx = idx
+                    miss_since_true = 0
+                else:
+                    if last_phase0_true_idx >= 0:
+                        miss_since_true += 1
+                        # Once we've gone past the grace window + tail_hold,
+                        # we know the action has ended.
+                        if miss_since_true > grace0 + tail_hold:
+                            break
+
+            if last_phase0_true_idx < 0:
+                continue
+
+            # End frame = last TRUE + tail_hold (time for hand to fully leave)
+            new_end_1 = last_phase0_true_idx + 1 + tail_hold  # 1-based
+            # Cap at next action boundary
+            new_end_1 = min(new_end_1, min_next_start_1 - 1, len(frames))
+
+            cur_end = int(item["end_frame"])
+            if new_end_1 > cur_end:
+                item["end_frame"] = new_end_1
+
+        return out
+
     def infer_from_detections(self, detections_jsonl: Path) -> Dict[str, Any]:
         frames = load_detection_frames(detections_jsonl, min_conf=self.min_det_conf)
         if not frames:
@@ -1434,6 +1540,9 @@ class DynamicSOPBuilder:
             matched_sequence, frames, inherited_groups
         )
         matched_sequence = self._refine_attach_timer_by_hand(
+            matched_sequence, frames, inherited_groups
+        )
+        matched_sequence = self._refine_attach_end_by_flip(
             matched_sequence, frames, inherited_groups
         )
 
