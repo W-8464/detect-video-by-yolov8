@@ -85,9 +85,12 @@ async def process_video(video: UploadFile = File(...)):
         # 4. Run dynamic_sop_builder.py
         sop_builder_script = ROOT / "dynamic_sop_builder.py"
         templates = [
-            "put_board.yaml", "take_only.yaml", "take_gasket.yaml",
-            "apply_gasket_to_shielding.yaml", "attach_gasket_payload_to_board.yaml",
-            "attach_only.yaml", "return_board.yaml"
+            "put_board.yaml", 
+            "take_only.yaml", 
+            "take_gasket.yaml", "apply_gasket_to_shielding.yaml", "attach_gasket_payload_to_board.yaml",
+            "attach_screw.yaml",
+            "attach_only.yaml", 
+            "return_board.yaml"
         ]
         template_paths = [str(ROOT / t) for t in templates]
         global_config = str(ROOT / "sop_global_shared.yaml")
@@ -137,6 +140,8 @@ async def render_video(data: Dict[str, Any] = Body(...)):
     file_id = data.get("file_id")
     folder_name = data.get("folder_name")
     actions = data.get("actions")
+    show_box = data.get("show_box", True)
+    show_hand_pose = data.get("show_hand_pose", True)
     
     if not file_id or not folder_name or actions is None:
         return JSONResponse(status_code=400, content={"message": "Missing file_id, folder_name or actions"})
@@ -188,6 +193,11 @@ async def render_video(data: Dict[str, Any] = Body(...)):
         "--overlay-output", str(final_video_path),
         "--json-timeline", str(json_timeline_path)
     ]
+
+    if not show_box:
+        sop_command.append("--hide-box")
+    if not show_hand_pose:
+        sop_command.append("--hide-hand-pose")
     
     try:
         print(f"Running Final Render: {' '.join(sop_command)}")

@@ -55,6 +55,22 @@
         </div>
       </div>
 
+      <!-- Render Options -->
+      <div class="render-options">
+        <h4>Tùy chọn hiển thị video kết quả</h4>
+        <div class="options-group">
+          <label class="option-item">
+            <input type="checkbox" [(ngModel)]="showBox">
+            <span>Hiển thị Bounding Box</span>
+          </label>
+          <label class="option-item">
+            <input type="checkbox" [(ngModel)]="showHandPose">
+            <span>Hiển thị Hand Pose</span>
+          </label>
+        </div>
+        <p class="help-text">Timer overlay luôn được hiển thị trong video kết quả.</p>
+      </div>
+
       <div class="editing-controls">
         <button class="btn btn-secondary" [disabled]="selectedActionIndices.length < 2" (click)="mergeActions()">
           Merge Selected

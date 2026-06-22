@@ -22,6 +22,10 @@ export class VideoProcessorComponent {
   selectedActionIndices: number[] = [];
   hasChanges: boolean = false;
 
+  // Render options
+  showBox: boolean = true;
+  showHandPose: boolean = true;
+
   constructor(private http: HttpClient) {}
 
   onFileSelected(event: Event): void {
@@ -120,18 +124,15 @@ export class VideoProcessorComponent {
 
     this.processingState = 'rendering';
     
-    if (!this.hasChanges) {
-        // No changes, just wait a bit and show the existing SOP video
-        setTimeout(() => {
-            this.processingState = 'done';
-        }, 1500);
-        return;
-    }
+    // We should always render if onRender is called, because the user might have changed 
+    // the render options (box/hand-pose) even if they didn't edit the actions.
 
     this.http.post<{ resultUrl: string }>('/api/video/render', {
       file_id: this.fileId,
       folder_name: this.folderName,
-      actions: this.actions
+      actions: this.actions,
+      show_box: this.showBox,
+      show_hand_pose: this.showHandPose
     }).pipe(
       catchError(error => {
         this.processingState = 'error';

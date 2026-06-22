@@ -27,6 +27,10 @@ def aabb_region(poly: np.ndarray, region: Optional[str] = None) -> Tuple[float, 
         y1 = y1 + (y2 - y1) * 2.0 / 3.0
     elif region == "top_third":
         y2 = y1 + (y2 - y1) / 3.0
+    elif region == "bottom_half":
+        y1 = y1 + (y2 - y1) * 0.5
+    elif region == "top_half":
+        y2 = y1 + (y2 - y1) * 0.5
     return x1, y1, x2, y2
 
 def iou_aabb(a: Tuple[float, float, float, float], b: Tuple[float, float, float, float]) -> float:
@@ -121,7 +125,7 @@ def evaluate_condition(dets: List[Detection], cond: dict, class_groups: dict = N
 
     if c_type in ("not_contain", "not_iou"):
         if subjs and not tgts: return True
-        if not subjs: return False
+        if not subjs: return True  # Nếu subject (vd screw driver) biến mất, coi như "không chạm" được thỏa mãn
 
     if c_type == "history_missing":
         if not history_frames: return True

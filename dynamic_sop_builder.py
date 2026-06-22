@@ -44,7 +44,13 @@ APPLY_GASKET_TO_SHIELDING_ACTION_ID = "apply_gasket_to_shielding"
 ATTACH_GASKET_PAYLOAD_TO_BOARD_ACTION_ID = "attach_shielding_and_gasket"
 
 
-def draw_detection_boxes(frame: np.ndarray, detections: List[Detection], class_colors: Optional[Dict[str, tuple]] = None) -> np.ndarray:
+def draw_detection_boxes(
+    frame: np.ndarray,
+    detections: List[Detection],
+    class_colors: Optional[Dict[str, tuple]] = None,
+    show_box: bool = True,
+    show_hand_pose: bool = True,
+) -> np.ndarray:
     if class_colors is None:
         class_colors = DEFAULT_CLASS_COLORS
     canvas = frame.copy()
@@ -67,9 +73,11 @@ def draw_detection_boxes(frame: np.ndarray, detections: List[Detection], class_c
     for i, d in enumerate(detections):
         color = class_colors.get(d.cls, (200, 200, 200))
         pts = d.poly.astype(np.int32)
-        cv2.polylines(canvas, [pts], isClosed=True, color=color, thickness=2)
+        
+        if show_box:
+            cv2.polylines(canvas, [pts], isClosed=True, color=color, thickness=2)
 
-        if d.keypoints is not None and d.cls == "hand":
+        if show_hand_pose and d.keypoints is not None and d.cls == "hand":
             kpts = d.keypoints
             for kp in kpts:
                 kx, ky = int(kp[0]), int(kp[1])
@@ -85,7 +93,7 @@ def draw_detection_boxes(frame: np.ndarray, detections: List[Detection], class_c
                     if c1 > 0.2 and c2 > 0.2:
                         cv2.line(canvas, (int(p1[0]), int(p1[1])), (int(p2[0]), int(p2[1])), (0, 255, 255), 2)
 
-        if best_idx.get(d.cls) != i:
+        if not show_box or best_idx.get(d.cls) != i:
             continue
 
         label = f"{d.cls} {d.conf:.2f}"
@@ -582,7 +590,7 @@ class DynamicSOPBuilder:
         Generic attach_component should be anchored by at least one completed take
         that happens after the latest completed generic attach in the current path.
         """
-        attach_start = int(attach_cand["start_frame"])
+        attach_start = DynamicSOPBuilder._ordering_start(attach_cand)
         last_attach_end = -1
         for seg in prior_segments:
             tmpl: ActionTemplate = seg["template"]
@@ -618,7 +626,7 @@ class DynamicSOPBuilder:
         if not attach_hand_ids:
             return True  # no hand ids to verify → allow (backward compat)
 
-        attach_start = int(attach_cand["start_frame"])
+        attach_start = DynamicSOPBuilder._ordering_start(attach_cand)
         latest_take = None
         for seg in reversed(prior_segments):
             tmpl = seg["template"]
@@ -687,7 +695,7 @@ class DynamicSOPBuilder:
             TAKE_GASKET_ACTION_ID,
         ):
             return "take"
-        if bid in ("attach_component", "attach_only"):
+        if bid in ("attach_component", "attach_only", "attach_screw"):
             return "attach"
         if bid == APPLY_GASKET_TO_SHIELDING_ACTION_ID:
             return "subtask"
@@ -733,17 +741,26 @@ class DynamicSOPBuilder:
 
     def _transition_score(self, prev: Dict[str, Any], cur: Dict[str, Any]) -> float:
         gap = self._ordering_start(cur) - int(prev["end_frame"])
+        prev_t = prev["template"]
+        cur_t = cur["template"]
+        
+        # Hard constraint: prevent overlapping actions of the same base type
+        if gap < 0 and prev_t.base_id == cur_t.base_id:
+            return -3.0
+            
         if gap < -45:
             return -3.0
         
         score = 0.0
         if gap < 0:
-            score -= (-gap / 45.0) * 2.0
+            if cur_t.base_id == "attach_screw":
+                # Allow more overlap because phase 0 is getting a screw
+                score -= (-gap / 120.0) 
+            else:
+                score -= (-gap / 45.0) * 2.0
         else:
             score -= min(1.5, gap / 140.0)
 
-        prev_t: ActionTemplate = prev["template"]
-        cur_t: ActionTemplate = cur["template"]
         prev_role = self._template_role(prev_t)
         cur_role = self._template_role(cur_t)
 
@@ -854,7 +871,9 @@ class DynamicSOPBuilder:
             local.sort(key=lambda x: (x["confidence"], x["end_frame"] - x["start_frame"]), reverse=True)
             kept: List[Dict[str, Any]] = []
             for cand in local:
-                if any(self._temporal_iou(cand, k) > 0.7 for k in kept):
+                # 0.3 is for dense screw actions, 0.7 is safer for general assembly to avoid merging cycles
+                nms_thr = 0.3 if tmpl.base_id == "attach_screw" else 0.7
+                if any(self._temporal_iou(cand, k) > nms_thr for k in kept):
                     continue
                 kept.append(cand)
                 
@@ -1448,7 +1467,7 @@ class DynamicSOPBuilder:
 
         for i, item in enumerate(out):
             tmpl: ActionTemplate = item["template"]
-            if tmpl.base_id not in ("attach_component", "attach_only"):
+            if tmpl.base_id not in ("attach_component", "attach_only", "attach_screw"):
                 continue
 
             phases = tmpl.action.get("phases", [])
@@ -1460,8 +1479,13 @@ class DynamicSOPBuilder:
                 continue
 
             # Use phase-0 conditions as the "ongoing" signal
-            phase0 = phases[0]
-            phase0_conds = phase0.get("conditions", [])
+            # For attach_screw, the 'ongoing' signal is driver_at_fixture (Phase 1)
+            # For others, it is usually Phase 0.
+            anchor_phase_idx = 1 if tmpl.base_id == "attach_screw" else 0
+            if anchor_phase_idx >= len(phases):
+                continue
+            anchor_phase = phases[anchor_phase_idx]
+            anchor_conds = anchor_phase.get("conditions", [])
             # hold_frames from the last phase = confirmation period after hand leaves
             tail_hold = max(1, int(last_phase.get("hold_frames", 1)))
 
@@ -1487,33 +1511,38 @@ class DynamicSOPBuilder:
                     min_next_start_1 = j_ord
             max_end_0 = min(len(frames), min_next_start_1 - 1)
 
-            # Scan: find the last frame where phase-0 is TRUE
-            last_phase0_true_idx = -1
-            grace0 = max(0, int(phase0.get("grace_miss", 0)))
+            # Scan: find the last frame where anchor phase is TRUE
+            last_anchor_true_idx = -1
+            grace_anchor = max(0, int(anchor_phase.get("grace_miss", 0)))
+            # For attach_screw, use a tighter grace during refinement to avoid absorbing travel time
+            if tmpl.base_id == "attach_screw":
+                grace_anchor = min(10, grace_anchor)
+                
             miss_since_true = 0
 
             for idx in range(scan_start_0, max_end_0):
                 history = frames[max(0, idx - 30):idx]
-                p0_met = all(
+                met = all(
                     evaluate_condition(frames[idx], c, class_groups, history)
-                    for c in phase0_conds
+                    for c in anchor_conds
                 )
-                if p0_met:
-                    last_phase0_true_idx = idx
+                if met:
+                    last_anchor_true_idx = idx
                     miss_since_true = 0
                 else:
-                    if last_phase0_true_idx >= 0:
-                        miss_since_true += 1
-                        # Once we've gone past the grace window + tail_hold,
-                        # we know the action has ended.
-                        if miss_since_true > grace0 + tail_hold:
-                            break
+                    miss_since_true += 1
+                    # Once we've gone past the grace window + tail_hold,
+                    # we know the action has ended.
+                    if miss_since_true > grace_anchor + tail_hold:
+                        break
 
-            if last_phase0_true_idx < 0:
+            if last_anchor_true_idx < 0:
                 continue
 
             # End frame = last TRUE + tail_hold (time for hand to fully leave)
-            new_end_1 = last_phase0_true_idx + 1 + tail_hold  # 1-based
+            # For attach_screw, we want a tighter end, so reduce tail_hold
+            eff_tail_hold = 0 if tmpl.base_id == "attach_screw" else tail_hold
+            new_end_1 = last_anchor_true_idx + 1 + eff_tail_hold  # 1-based
             # Cap at next action boundary
             new_end_1 = min(new_end_1, min_next_start_1 - 1, len(frames))
 
@@ -1623,9 +1652,13 @@ class DynamicSOPBuilder:
             eff_start = int(item.get("timer_start_frame", item.get("semantic_start_frame", item["start_frame"])))
             if matches_meta:
                 prev_end = int(matches_meta[-1]["end_frame"])
-                candidate_start = max(eff_start, prev_end + 1)
-                if candidate_start <= int(item["end_frame"]):
-                    eff_start = candidate_start
+                # For sequential attach_screw, force perfect continuity (no idle gaps)
+                if tmpl.base_id == "attach_screw" and "attach_screw" in matches_meta[-1]["action_id"]:
+                    eff_start = prev_end + 1
+                else:
+                    candidate_start = max(eff_start, prev_end + 1)
+                    if candidate_start <= int(item["end_frame"]):
+                        eff_start = candidate_start
             eff_start = min(eff_start, int(item["end_frame"]))
             matches_meta.append(
                 {
@@ -1727,6 +1760,18 @@ def parse_args() -> argparse.Namespace:
         default="",
         help="Path to a JSON file containing timeline rows to render directly.",
     )
+    parser.add_argument(
+        "--hide-box",
+        action="store_true",
+        default=False,
+        help="Whether to hide bounding boxes in the overlay video.",
+    )
+    parser.add_argument(
+        "--hide-hand-pose",
+        action="store_true",
+        default=False,
+        help="Whether to hide hand pose keypoints in the overlay video.",
+    )
     return parser.parse_args()
 
 
@@ -1736,6 +1781,8 @@ def render_video_with_boxes_and_timer(
     detections_jsonl: Path,
     timeline_rows: List[dict],
     min_conf: float = 0.0,
+    show_box: bool = True,
+    show_hand_pose: bool = True,
 ) -> None:
     frames_dets = load_detection_frames(detections_jsonl, min_conf=min_conf)
 
@@ -1800,7 +1847,7 @@ def render_video_with_boxes_and_timer(
         frame_idx += 1
 
         dets = frames_dets[frame_idx - 1] if (frame_idx - 1) < len(frames_dets) else []
-        frame = draw_detection_boxes(frame, dets)
+        frame = draw_detection_boxes(frame, dets, show_box=show_box, show_hand_pose=show_hand_pose)
 
         while seg_idx < len(segments) and frame_idx > segments[seg_idx][1]:
             seg_idx += 1
@@ -1858,7 +1905,15 @@ def main() -> None:
         video_path = Path(args.video)
         overlay_path = Path(args.overlay_output)
         detections_path = Path(args.detections) if args.detections else None
-        render_video_with_boxes_and_timer(video_path, overlay_path, detections_path, timeline_rows, min_conf=0.25)
+        render_video_with_boxes_and_timer(
+            video_path,
+            overlay_path,
+            detections_path,
+            timeline_rows,
+            min_conf=0.25,
+            show_box=not args.hide_box,
+            show_hand_pose=not args.hide_hand_pose,
+        )
         print(f"✅ JSON-based timer overlay video written: {overlay_path}")
         return
 
@@ -1908,7 +1963,15 @@ def main() -> None:
             else output_path.with_name(f"{output_path.stem}_timer_overlay.mp4")
         )
         timeline_rows = builder.build_timeline_rows(inferred)
-        render_video_with_boxes_and_timer(video_path, overlay_path, detections_path, timeline_rows, min_conf=0.25)
+        render_video_with_boxes_and_timer(
+            video_path,
+            overlay_path,
+            detections_path,
+            timeline_rows,
+            min_conf=0.25,
+            show_box=not args.hide_box,
+            show_hand_pose=not args.hide_hand_pose,
+        )
         print(f"✅ Timer overlay video written: {overlay_path}")
 
 

@@ -15,7 +15,6 @@ global:
     - bracket
     Container:
     - tray
-    - screw machine
   class_colors:
     hand:
     - 0
@@ -274,7 +273,7 @@ actions:
   description: 'Tác vụ: Bắn vít (cầm screw driver lấy vít từ screw machine và bắn
     lên fixture). (lần 1)'
   max_action_frames: 0
-  timer_start_phase: 1
+  timer_start_phase: 0
   phases:
   - id: driver_at_screw_machine
     conditions:
@@ -288,14 +287,13 @@ actions:
         sub_conditions:
         - type: iou
           subject: screw driver
-          subject_region: bottom_half
           target: screw machine
           min_thr: 0.02
         - type: iou
           subject: hand
           target: screw machine
           min_thr: 0.05
-    hold_frames: 2
+    hold_frames: 1
     grace_miss: 35
   - id: driver_at_fixture
     conditions:
@@ -306,10 +304,6 @@ actions:
         subject_region: bottom_half
         target: fixture
         min_thr: 0.02
-      - type: iou
-        subject: hand
-        target: fixture
-        min_thr: 0.05
     hold_frames: 2
     grace_miss: 40
   - id: driver_leaves_fixture
@@ -327,7 +321,7 @@ actions:
   description: 'Tác vụ: Bắn vít (cầm screw driver lấy vít từ screw machine và bắn
     lên fixture). (lần 2)'
   max_action_frames: 0
-  timer_start_phase: 1
+  timer_start_phase: 0
   phases:
   - id: driver_at_screw_machine
     conditions:
@@ -341,14 +335,13 @@ actions:
         sub_conditions:
         - type: iou
           subject: screw driver
-          subject_region: bottom_half
           target: screw machine
           min_thr: 0.02
         - type: iou
           subject: hand
           target: screw machine
           min_thr: 0.05
-    hold_frames: 2
+    hold_frames: 1
     grace_miss: 35
   - id: driver_at_fixture
     conditions:
@@ -359,10 +352,6 @@ actions:
         subject_region: bottom_half
         target: fixture
         min_thr: 0.02
-      - type: iou
-        subject: hand
-        target: fixture
-        min_thr: 0.05
     hold_frames: 2
     grace_miss: 40
   - id: driver_leaves_fixture
@@ -380,7 +369,7 @@ actions:
   description: 'Tác vụ: Bắn vít (cầm screw driver lấy vít từ screw machine và bắn
     lên fixture). (lần 3)'
   max_action_frames: 0
-  timer_start_phase: 1
+  timer_start_phase: 0
   phases:
   - id: driver_at_screw_machine
     conditions:
@@ -394,14 +383,13 @@ actions:
         sub_conditions:
         - type: iou
           subject: screw driver
-          subject_region: bottom_half
           target: screw machine
           min_thr: 0.02
         - type: iou
           subject: hand
           target: screw machine
           min_thr: 0.05
-    hold_frames: 2
+    hold_frames: 1
     grace_miss: 35
   - id: driver_at_fixture
     conditions:
@@ -412,10 +400,6 @@ actions:
         subject_region: bottom_half
         target: fixture
         min_thr: 0.02
-      - type: iou
-        subject: hand
-        target: fixture
-        min_thr: 0.05
     hold_frames: 2
     grace_miss: 40
   - id: driver_leaves_fixture
@@ -433,7 +417,7 @@ actions:
   description: 'Tác vụ: Bắn vít (cầm screw driver lấy vít từ screw machine và bắn
     lên fixture). (lần 4)'
   max_action_frames: 0
-  timer_start_phase: 1
+  timer_start_phase: 0
   phases:
   - id: driver_at_screw_machine
     conditions:
@@ -447,14 +431,13 @@ actions:
         sub_conditions:
         - type: iou
           subject: screw driver
-          subject_region: bottom_half
           target: screw machine
           min_thr: 0.02
         - type: iou
           subject: hand
           target: screw machine
           min_thr: 0.05
-    hold_frames: 2
+    hold_frames: 1
     grace_miss: 35
   - id: driver_at_fixture
     conditions:
@@ -465,10 +448,6 @@ actions:
         subject_region: bottom_half
         target: fixture
         min_thr: 0.02
-      - type: iou
-        subject: hand
-        target: fixture
-        min_thr: 0.05
     hold_frames: 2
     grace_miss: 40
   - id: driver_leaves_fixture
@@ -486,7 +465,7 @@ actions:
   description: 'Tác vụ: Bắn vít (cầm screw driver lấy vít từ screw machine và bắn
     lên fixture). (lần 5)'
   max_action_frames: 0
-  timer_start_phase: 1
+  timer_start_phase: 0
   phases:
   - id: driver_at_screw_machine
     conditions:
@@ -500,14 +479,13 @@ actions:
         sub_conditions:
         - type: iou
           subject: screw driver
-          subject_region: bottom_half
           target: screw machine
           min_thr: 0.02
         - type: iou
           subject: hand
           target: screw machine
           min_thr: 0.05
-    hold_frames: 2
+    hold_frames: 1
     grace_miss: 35
   - id: driver_at_fixture
     conditions:
@@ -518,10 +496,54 @@ actions:
         subject_region: bottom_half
         target: fixture
         min_thr: 0.02
+    hold_frames: 2
+    grace_miss: 40
+  - id: driver_leaves_fixture
+    conditions:
+    - type: not_iou
+      subject: screw driver
+      subject_region: bottom_half
+      target: fixture
+      max_thr: 0.02
+    hold_frames: 2
+    grace_miss: 30
+    wait_for_flip: true
+    min_false_frames: 3
+- id: attach_screw_6
+  description: 'Tác vụ: Bắn vít (cầm screw driver lấy vít từ screw machine và bắn
+    lên fixture). (lần 6)'
+  max_action_frames: 0
+  timer_start_phase: 0
+  phases:
+  - id: driver_at_screw_machine
+    conditions:
+    - type: and
+      sub_conditions:
       - type: iou
         subject: hand
-        target: fixture
+        target: screw driver
         min_thr: 0.05
+      - type: or
+        sub_conditions:
+        - type: iou
+          subject: screw driver
+          target: screw machine
+          min_thr: 0.02
+        - type: iou
+          subject: hand
+          target: screw machine
+          min_thr: 0.05
+    hold_frames: 1
+    grace_miss: 35
+  - id: driver_at_fixture
+    conditions:
+    - type: or
+      sub_conditions:
+      - type: iou
+        subject: screw driver
+        subject_region: bottom_half
+        target: fixture
+        min_thr: 0.02
     hold_frames: 2
     grace_miss: 40
   - id: driver_leaves_fixture
@@ -726,64 +748,11 @@ actions:
       min_frames: 5
       max_frames: 40
       weight: 0.5
-- id: attach_screw_6
-  description: 'Tác vụ: Bắn vít (cầm screw driver lấy vít từ screw machine và bắn
-    lên fixture). (lần 6)'
-  max_action_frames: 0
-  timer_start_phase: 1
-  phases:
-  - id: driver_at_screw_machine
-    conditions:
-    - type: and
-      sub_conditions:
-      - type: iou
-        subject: hand
-        target: screw driver
-        min_thr: 0.05
-      - type: or
-        sub_conditions:
-        - type: iou
-          subject: screw driver
-          subject_region: bottom_half
-          target: screw machine
-          min_thr: 0.02
-        - type: iou
-          subject: hand
-          target: screw machine
-          min_thr: 0.05
-    hold_frames: 2
-    grace_miss: 35
-  - id: driver_at_fixture
-    conditions:
-    - type: or
-      sub_conditions:
-      - type: iou
-        subject: screw driver
-        subject_region: bottom_half
-        target: fixture
-        min_thr: 0.02
-      - type: iou
-        subject: hand
-        target: fixture
-        min_thr: 0.05
-    hold_frames: 2
-    grace_miss: 40
-  - id: driver_leaves_fixture
-    conditions:
-    - type: not_iou
-      subject: screw driver
-      subject_region: bottom_half
-      target: fixture
-      max_thr: 0.02
-    hold_frames: 2
-    grace_miss: 30
-    wait_for_flip: true
-    min_false_frames: 3
 - id: attach_screw_7
   description: 'Tác vụ: Bắn vít (cầm screw driver lấy vít từ screw machine và bắn
     lên fixture). (lần 7)'
   max_action_frames: 0
-  timer_start_phase: 1
+  timer_start_phase: 0
   phases:
   - id: driver_at_screw_machine
     conditions:
@@ -797,14 +766,13 @@ actions:
         sub_conditions:
         - type: iou
           subject: screw driver
-          subject_region: bottom_half
           target: screw machine
           min_thr: 0.02
         - type: iou
           subject: hand
           target: screw machine
           min_thr: 0.05
-    hold_frames: 2
+    hold_frames: 1
     grace_miss: 35
   - id: driver_at_fixture
     conditions:
@@ -815,10 +783,6 @@ actions:
         subject_region: bottom_half
         target: fixture
         min_thr: 0.02
-      - type: iou
-        subject: hand
-        target: fixture
-        min_thr: 0.05
     hold_frames: 2
     grace_miss: 40
   - id: driver_leaves_fixture
@@ -836,7 +800,7 @@ actions:
   description: 'Tác vụ: Bắn vít (cầm screw driver lấy vít từ screw machine và bắn
     lên fixture). (lần 8)'
   max_action_frames: 0
-  timer_start_phase: 1
+  timer_start_phase: 0
   phases:
   - id: driver_at_screw_machine
     conditions:
@@ -850,14 +814,13 @@ actions:
         sub_conditions:
         - type: iou
           subject: screw driver
-          subject_region: bottom_half
           target: screw machine
           min_thr: 0.02
         - type: iou
           subject: hand
           target: screw machine
           min_thr: 0.05
-    hold_frames: 2
+    hold_frames: 1
     grace_miss: 35
   - id: driver_at_fixture
     conditions:
@@ -868,10 +831,6 @@ actions:
         subject_region: bottom_half
         target: fixture
         min_thr: 0.02
-      - type: iou
-        subject: hand
-        target: fixture
-        min_thr: 0.05
     hold_frames: 2
     grace_miss: 40
   - id: driver_leaves_fixture
@@ -889,7 +848,7 @@ actions:
   description: 'Tác vụ: Bắn vít (cầm screw driver lấy vít từ screw machine và bắn
     lên fixture). (lần 9)'
   max_action_frames: 0
-  timer_start_phase: 1
+  timer_start_phase: 0
   phases:
   - id: driver_at_screw_machine
     conditions:
@@ -903,14 +862,13 @@ actions:
         sub_conditions:
         - type: iou
           subject: screw driver
-          subject_region: bottom_half
           target: screw machine
           min_thr: 0.02
         - type: iou
           subject: hand
           target: screw machine
           min_thr: 0.05
-    hold_frames: 2
+    hold_frames: 1
     grace_miss: 35
   - id: driver_at_fixture
     conditions:
@@ -921,10 +879,6 @@ actions:
         subject_region: bottom_half
         target: fixture
         min_thr: 0.02
-      - type: iou
-        subject: hand
-        target: fixture
-        min_thr: 0.05
     hold_frames: 2
     grace_miss: 40
   - id: driver_leaves_fixture
@@ -942,7 +896,7 @@ actions:
   description: 'Tác vụ: Bắn vít (cầm screw driver lấy vít từ screw machine và bắn
     lên fixture). (lần 10)'
   max_action_frames: 0
-  timer_start_phase: 1
+  timer_start_phase: 0
   phases:
   - id: driver_at_screw_machine
     conditions:
@@ -956,14 +910,13 @@ actions:
         sub_conditions:
         - type: iou
           subject: screw driver
-          subject_region: bottom_half
           target: screw machine
           min_thr: 0.02
         - type: iou
           subject: hand
           target: screw machine
           min_thr: 0.05
-    hold_frames: 2
+    hold_frames: 1
     grace_miss: 35
   - id: driver_at_fixture
     conditions:
@@ -974,10 +927,54 @@ actions:
         subject_region: bottom_half
         target: fixture
         min_thr: 0.02
+    hold_frames: 2
+    grace_miss: 40
+  - id: driver_leaves_fixture
+    conditions:
+    - type: not_iou
+      subject: screw driver
+      subject_region: bottom_half
+      target: fixture
+      max_thr: 0.02
+    hold_frames: 2
+    grace_miss: 30
+    wait_for_flip: true
+    min_false_frames: 3
+- id: attach_screw_11
+  description: 'Tác vụ: Bắn vít (cầm screw driver lấy vít từ screw machine và bắn
+    lên fixture). (lần 11)'
+  max_action_frames: 0
+  timer_start_phase: 0
+  phases:
+  - id: driver_at_screw_machine
+    conditions:
+    - type: and
+      sub_conditions:
       - type: iou
         subject: hand
-        target: fixture
+        target: screw driver
         min_thr: 0.05
+      - type: or
+        sub_conditions:
+        - type: iou
+          subject: screw driver
+          target: screw machine
+          min_thr: 0.02
+        - type: iou
+          subject: hand
+          target: screw machine
+          min_thr: 0.05
+    hold_frames: 1
+    grace_miss: 35
+  - id: driver_at_fixture
+    conditions:
+    - type: or
+      sub_conditions:
+      - type: iou
+        subject: screw driver
+        subject_region: bottom_half
+        target: fixture
+        min_thr: 0.02
     hold_frames: 2
     grace_miss: 40
   - id: driver_leaves_fixture
@@ -1029,112 +1026,118 @@ actions:
     hold_frames: 4
     grace_miss: 10
 _inference_meta:
-  total_matches: 18
+  total_matches: 19
   matches:
   - action_id: put_board_into_jig_1
-    source_template: put_board.yaml
+    source_template: /home/admin/my_yolo_project/put_board.yaml
     start_frame: 57
     match_start_frame: 1
     end_frame: 122
     confidence: 1.0
   - action_id: take_heatsink_1
-    source_template: take_only.yaml
+    source_template: /home/admin/my_yolo_project/take_only.yaml
     start_frame: 123
     match_start_frame: 1
     end_frame: 147
     confidence: 1.0
   - action_id: attach_heatsink_1
-    source_template: attach_only.yaml
+    source_template: /home/admin/my_yolo_project/attach_only.yaml
     start_frame: 173
     match_start_frame: 173
     end_frame: 209
     confidence: 1.0
   - action_id: attach_screw_1
-    source_template: attach_screw.yaml
-    start_frame: 227
-    match_start_frame: 225
+    source_template: /home/admin/my_yolo_project/attach_screw.yaml
+    start_frame: 210
+    match_start_frame: 189
     end_frame: 267
     confidence: 1.0
   - action_id: attach_screw_2
-    source_template: attach_screw.yaml
-    start_frame: 283
-    match_start_frame: 281
-    end_frame: 412
+    source_template: /home/admin/my_yolo_project/attach_screw.yaml
+    start_frame: 268
+    match_start_frame: 369
+    end_frame: 411
     confidence: 1.0
   - action_id: attach_screw_3
-    source_template: attach_screw.yaml
-    start_frame: 427
-    match_start_frame: 425
-    end_frame: 501
+    source_template: /home/admin/my_yolo_project/attach_screw.yaml
+    start_frame: 412
+    match_start_frame: 477
+    end_frame: 500
     confidence: 1.0
   - action_id: attach_screw_4
-    source_template: attach_screw.yaml
-    start_frame: 515
-    match_start_frame: 513
-    end_frame: 557
+    source_template: /home/admin/my_yolo_project/attach_screw.yaml
+    start_frame: 501
+    match_start_frame: 541
+    end_frame: 556
     confidence: 1.0
   - action_id: attach_screw_5
-    source_template: attach_screw.yaml
-    start_frame: 571
-    match_start_frame: 569
-    end_frame: 632
+    source_template: /home/admin/my_yolo_project/attach_screw.yaml
+    start_frame: 557
+    match_start_frame: 609
+    end_frame: 631
+    confidence: 1.0
+  - action_id: attach_screw_6
+    source_template: /home/admin/my_yolo_project/attach_screw.yaml
+    start_frame: 632
+    match_start_frame: 681
+    end_frame: 702
     confidence: 1.0
   - action_id: board_back_to_conveyor_1
-    source_template: return_board.yaml
+    source_template: /home/admin/my_yolo_project/return_board.yaml
     start_frame: 742
     match_start_frame: 685
     end_frame: 763
     confidence: 1.0
   - action_id: put_board_into_jig_2
-    source_template: put_board.yaml
+    source_template: /home/admin/my_yolo_project/put_board.yaml
     start_frame: 832
     match_start_frame: 757
     end_frame: 894
     confidence: 1.0
   - action_id: take_heatsink_2
-    source_template: take_only.yaml
+    source_template: /home/admin/my_yolo_project/take_only.yaml
     start_frame: 905
     match_start_frame: 905
     end_frame: 919
     confidence: 1.0
   - action_id: attach_heatsink_2
-    source_template: attach_only.yaml
+    source_template: /home/admin/my_yolo_project/attach_only.yaml
     start_frame: 950
     match_start_frame: 929
     end_frame: 985
     confidence: 1.0
-  - action_id: attach_screw_6
-    source_template: attach_screw.yaml
-    start_frame: 1003
-    match_start_frame: 1001
+  - action_id: attach_screw_7
+    source_template: /home/admin/my_yolo_project/attach_screw.yaml
+    start_frame: 986
+    match_start_frame: 961
     end_frame: 1042
     confidence: 1.0
-  - action_id: attach_screw_7
-    source_template: attach_screw.yaml
-    start_frame: 1059
-    match_start_frame: 1057
+  - action_id: attach_screw_8
+    source_template: /home/admin/my_yolo_project/attach_screw.yaml
+    start_frame: 1043
+    match_start_frame: 1093
     end_frame: 1110
     confidence: 1.0
-  - action_id: attach_screw_8
-    source_template: attach_screw.yaml
-    start_frame: 1127
-    match_start_frame: 1125
+  - action_id: attach_screw_9
+    source_template: /home/admin/my_yolo_project/attach_screw.yaml
+    start_frame: 1111
+    match_start_frame: 1153
     end_frame: 1167
     confidence: 1.0
-  - action_id: attach_screw_9
-    source_template: attach_screw.yaml
-    start_frame: 1183
-    match_start_frame: 1181
-    end_frame: 1245
-    confidence: 1.0
   - action_id: attach_screw_10
-    source_template: attach_screw.yaml
-    start_frame: 1263
-    match_start_frame: 1261
-    end_frame: 1308
+    source_template: /home/admin/my_yolo_project/attach_screw.yaml
+    start_frame: 1168
+    match_start_frame: 1221
+    end_frame: 1244
+    confidence: 1.0
+  - action_id: attach_screw_11
+    source_template: /home/admin/my_yolo_project/attach_screw.yaml
+    start_frame: 1245
+    match_start_frame: 1305
+    end_frame: 1375
     confidence: 1.0
   - action_id: board_back_to_conveyor_2
-    source_template: return_board.yaml
+    source_template: /home/admin/my_yolo_project/return_board.yaml
     start_frame: 1410
     match_start_frame: 1353
     end_frame: 1431

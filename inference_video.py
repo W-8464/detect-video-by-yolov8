@@ -120,7 +120,7 @@ def parse_args():
     parser.add_argument(
         "--input",
         type=str,
-        default=str((ROOT / "datasets/xb10_5_2.mp4").resolve()),
+        default=str((ROOT / "datasets/xb10_4_1.mp4").resolve()),
         help="Input video path",
     )
     parser.add_argument(

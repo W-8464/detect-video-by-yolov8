@@ -1,0 +1,118 @@
+{
+  "dataset": "xb10_2_8_cut",
+  "action_count": 16,
+  "actions": [
+    {
+      "action_id": "put_board_into_jig_1",
+      "source_template": "put_board.yaml",
+      "start_frame": 16,
+      "end_frame": 49,
+      "confidence": 1.0
+    },
+    {
+      "action_id": "take_gasket_1",
+      "source_template": "take_only.yaml",
+      "start_frame": 69,
+      "end_frame": 88,
+      "confidence": 1.0
+    },
+    {
+      "action_id": "attach_gasket_1",
+      "source_template": "attach_only.yaml",
+      "start_frame": 93,
+      "end_frame": 149,
+      "confidence": 1.0
+    },
+    {
+      "action_id": "take_gasket_2",
+      "source_template": "take_only.yaml",
+      "start_frame": 150,
+      "end_frame": 165,
+      "confidence": 1.0
+    },
+    {
+      "action_id": "attach_gasket_2",
+      "source_template": "attach_only.yaml",
+      "start_frame": 177,
+      "end_frame": 240,
+      "confidence": 1.0
+    },
+    {
+      "action_id": "take_gasket_3",
+      "source_template": "take_only.yaml",
+      "start_frame": 241,
+      "end_frame": 269,
+      "confidence": 1.0
+    },
+    {
+      "action_id": "attach_gasket_3",
+      "source_template": "attach_only.yaml",
+      "start_frame": 277,
+      "end_frame": 342,
+      "confidence": 1.0
+    },
+    {
+      "action_id": "board_back_to_conveyor_1",
+      "source_template": "return_board.yaml",
+      "start_frame": 343,
+      "end_frame": 368,
+      "confidence": 1.0
+    },
+    {
+      "action_id": "put_board_into_jig_2",
+      "source_template": "put_board.yaml",
+      "start_frame": 392,
+      "end_frame": 432,
+      "confidence": 1.0
+    },
+    {
+      "action_id": "take_shielding_4",
+      "source_template": "take_only.yaml",
+      "start_frame": 456,
+      "end_frame": 495,
+      "confidence": 1.0
+    },
+    {
+      "action_id": "attach_shielding_4",
+      "source_template": "attach_only.yaml",
+      "start_frame": 501,
+      "end_frame": 540,
+      "confidence": 1.0
+    },
+    {
+      "action_id": "take_shielding_5",
+      "source_template": "take_only.yaml",
+      "start_frame": 541,
+      "end_frame": 570,
+      "confidence": 1.0
+    },
+    {
+      "action_id": "attach_shielding_5",
+      "source_template": "attach_only.yaml",
+      "start_frame": 573,
+      "end_frame": 627,
+      "confidence": 1.0
+    },
+    {
+      "action_id": "take_shielding_6",
+      "source_template": "take_only.yaml",
+      "start_frame": 628,
+      "end_frame": 651,
+      "confidence": 1.0
+    },
+    {
+      "action_id": "attach_shielding_6",
+      "source_template": "attach_only.yaml",
+      "start_frame": 657,
+      "end_frame": 714,
+      "confidence": 1.0
+    },
+    {
+      "action_id": "board_back_to_conveyor_2",
+      "source_template": "return_board.yaml",
+      "start_frame": 715,
+      "end_frame": 733,
+      "confidence": 1.0
+    }
+  ]
+}

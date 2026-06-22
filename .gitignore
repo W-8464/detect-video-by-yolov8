@@ -35,6 +35,7 @@ datasets/
 *.mkv
 *.mov
 *.jsonl
+*.zip
 roi_debug_frames/
 SOP_Cycle_Time_Report.csv
 
