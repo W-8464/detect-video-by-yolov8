@@ -3,33 +3,73 @@ global:
 
 actions:
   - id: put_board_into_jig
-    description: "Nhóm tác vụ độc lập: Đặt board vào jig. Bắt đầu khi board xuất hiện, hoàn thành khi board nằm gọn. Sau khi hoàn thành sẽ lưu CSV và đếm lại từ đầu."
+    description: "Nhóm tác vụ độc lập: Đặt board vào jig. Hỗ trợ 2 nhánh: (A) board mới xuất hiện từ ngoài frame, (B) hand mang board từ truyền (1/4 trên) xuống khu vực thao tác (3/4 dưới). Hoàn thành khi board nằm gọn trong jig hoặc đứng yên."
     max_action_frames: 0
     
     phases:
       - id: "wait_board_appear"
         conditions:
-          - type: "exists"
-            subject: "Target"
-            min_count: 1
-          - type: "history_missing"
-            subject: "Target"
-            history_len: 20
-            min_missing_frames: 15
+          - type: "or"
+            sub_conditions:
+              # ── Nhánh A: board xuất hiện từ ngoài khung hình (camera không thấy truyền) ──
+              - type: "and"
+                sub_conditions:
+                  - type: "exists"
+                    subject: "Target"
+                    min_count: 1
+                  - type: "history_missing"
+                    subject: "Target"
+                    history_len: 20
+                    min_missing_frames: 15
+              # ── Nhánh B: hand IOU với target ở khu vực truyền (1/4 trên frame) ──
+              # Camera nhìn thấy cả truyền → board luôn hiện diện → dùng hand movement thay vì history_missing
+              - type: "and"
+                sub_conditions:
+                  # Hand đang chạm/overlap với Target ở vùng truyền (top 25%)
+                  - type: "iou_in_zone"
+                    subject: "hand"
+                    target: "Target"
+                    zone_y_min_ratio: 0.0
+                    zone_y_max_ratio: 0.25
+                    target_zone_y_min_ratio: 0.0
+                    target_zone_y_max_ratio: 0.25
+                    min_thr: 0.05
+                  # Khu vực thao tác (3/4 dưới) chưa có Target (board chưa được đưa xuống)
+                  # - type: "missing_in_zone"
+                  #   subject: "Target"
+                  #   zone_y_min_ratio: 0.25
+                  #   zone_y_max_ratio: 1.0
         hold_frames: 3
         grace_miss: 10
         
       - id: "put_board_in_jig_or_static"
+        lock_subject_from_phase0: true
         conditions:
-          - type: "or"
+          - type: "and"
             sub_conditions:
-              - type: "contain"
+              # Target phải ở khu vực thao tác (3/4 dưới) — board đã được đưa xuống
+              - type: "exists_in_zone"
                 subject: "Target"
-                target: "jig"
-                min_thr: 0.90
-              - type: "stationary"
-                subject: "Target"
-                history_len: 10
-                min_iou: 0.85
+                zone_y_min_ratio: 0.25
+                zone_y_max_ratio: 1.0
+              # Board nằm gọn trong jig HOẶC đứng yên
+              - type: "or"
+                sub_conditions:
+                  - type: "contain"
+                    subject: "Target"
+                    target: "jig"
+                    min_thr: 0.90
+                  - type: "stationary"
+                    subject: "Target"
+                    history_len: 10
+                    min_iou: 0.85
         hold_frames: 30
         grace_miss: 30
+
+    score_rules:
+      verification:
+        component: "Target"
+        prerequisite: true
+        mode: "zone_transition"
+        post_frames: 60
+        min_hits: 1

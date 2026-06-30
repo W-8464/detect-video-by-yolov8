@@ -3,7 +3,7 @@ global:
 
 actions:
   - id: board_back_to_conveyor
-    description: "Nhóm tác vụ độc lập: Lấy board đặt lại chuyền. (Chỉ tính giờ từ khi board TỪ TRONG jig bắt đầu bị rút ra)"
+    description: "Nhóm tác vụ độc lập: Lấy board đặt lại chuyền. (Chỉ tính giờ từ khi board TỪ TRONG jig bắt đầu bị rút ra). Hỗ trợ camera nhìn thấy truyền: kết thúc khi board rời khỏi khu vực thao tác (3/4 dưới)."
     max_action_frames: 0
     timer_start_phase: 1  # Đồng hồ đếm thời gian thực thi chỉ bắt đầu từ Phase 1
     phases:
@@ -31,11 +31,33 @@ actions:
                 max_thr: 0.88
               - type: "missing"
                 subject: "Target"
+              # Nhánh mới: board vẫn visible nhưng đã rời khu vực thao tác (đang trên đường lên truyền)
+              - type: "missing_in_zone"
+                subject: "Target"
+                zone_y_min_ratio: 0.25
+                zone_y_max_ratio: 1.0
         hold_frames: 15
         grace_miss: 30
-      - id: "board_missing_from_camera"
+
+      - id: "board_gone_from_work_area"
         conditions:
-          - type: "missing"
-            subject: "Target"
+          - type: "or"
+            sub_conditions:
+              # Camera không thấy truyền: board biến mất hoàn toàn
+              - type: "missing"
+                subject: "Target"
+              # Camera thấy truyền: board không còn ở khu vực thao tác (3/4 dưới)
+              - type: "missing_in_zone"
+                subject: "Target"
+                zone_y_min_ratio: 0.25
+                zone_y_max_ratio: 1.0
         hold_frames: 4
         grace_miss: 10
+
+    score_rules:
+      verification:
+        component: "Target"
+        prerequisite: true
+        mode: "zone_transition"
+        post_frames: 60
+        min_hits: 1

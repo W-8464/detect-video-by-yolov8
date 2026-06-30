@@ -1,0 +1,1313 @@
+global:
+  handoff_prev_end_to_next_start: true
+  class_groups:
+    Component:
+    - PCIe cable
+    - shielding
+    - gasket
+    - heatsink
+    - screw
+    - light pipe
+    - rear panel
+    - label
+    Tool:
+    - tweezers
+    - screw driver
+    - scanner
+    Target:
+    - board
+    - bracket
+    - enclosure
+    - bottom cover
+    Container:
+    - tray
+    _frame_height: 1080
+  class_colors:
+    hand:
+    - 0
+    - 255
+    - 0
+    tray:
+    - 255
+    - 0
+    - 0
+    board:
+    - 0
+    - 0
+    - 255
+    jig:
+    - 255
+    - 255
+    - 0
+    liner:
+    - 0
+    - 255
+    - 255
+    tweezers:
+    - 128
+    - 255
+    - 128
+    shielding:
+    - 255
+    - 128
+    - 0
+    PCIe cable:
+    - 255
+    - 0
+    - 255
+    gasket:
+    - 128
+    - 0
+    - 255
+    bracket:
+    - 0
+    - 128
+    - 255
+    heatsink:
+    - 200
+    - 100
+    - 50
+    screw:
+    - 150
+    - 150
+    - 150
+    screw driver:
+    - 100
+    - 200
+    - 100
+    screw machine:
+    - 100
+    - 100
+    - 200
+    fixture:
+    - 50
+    - 50
+    - 50
+    light pipe:
+    - 255
+    - 150
+    - 150
+    bottom cover:
+    - 150
+    - 255
+    - 150
+    rear panel:
+    - 150
+    - 150
+    - 255
+    enclosure:
+    - 200
+    - 200
+    - 100
+    label:
+    - 100
+    - 200
+    - 200
+    scanner:
+    - 200
+    - 100
+    - 200
+  roi_model_mapping:
+    0: hand
+    1: tweezers
+    2: shielding
+    3: gasket
+    4: label
+  roi_small_classes:
+  - shielding
+  - gasket
+  - label
+  tuning:
+    conf_threshold: 0.55
+    min_match_frames: 10
+    max_window_frames: 300
+    rearm_frames: 5
+    phase_start_wait_frames: 220
+    semantic_lookback_frames: 300
+    attach_anchor_max_gap_frames: 150
+    gasket_attach_max_gap_frames: 220
+    min_take_gasket_span_frames: 25
+    scan_stride: 4
+    roi_pad: 1.6
+    return_role_threshold_offset: 0.1
+    pose:
+      imgsz: 416
+      conf: 0.25
+      iou: 0.5
+      kpts_smooth_alpha: 0.7
+      kpts_display_conf: 0.3
+actions:
+- id: put_board
+  description: 'Nhóm tác vụ độc lập: Đặt board vào jig. Hỗ trợ 2 nhánh: (A) board
+    mới xuất hiện từ ngoài frame, (B) hand mang board từ truyền (1/4 trên) xuống khu
+    vực thao tác (3/4 dưới). Hoàn thành khi board nằm gọn trong jig hoặc đứng yên.'
+  max_action_frames: 0
+  phases:
+  - id: wait_board_appear
+    conditions:
+    - type: or
+      sub_conditions:
+      - type: and
+        sub_conditions:
+        - type: exists
+          subject: Target
+          min_count: 1
+        - type: history_missing
+          subject: Target
+          history_len: 20
+          min_missing_frames: 15
+      - type: and
+        sub_conditions:
+        - type: iou_in_zone
+          subject: hand
+          target: Target
+          zone_y_min_ratio: 0.0
+          zone_y_max_ratio: 0.25
+          target_zone_y_min_ratio: 0.0
+          target_zone_y_max_ratio: 0.25
+          min_thr: 0.05
+    hold_frames: 3
+    grace_miss: 10
+  - id: put_board_in_jig_or_static
+    lock_subject_from_phase0: true
+    conditions:
+    - type: and
+      sub_conditions:
+      - type: exists_in_zone
+        subject: Target
+        zone_y_min_ratio: 0.25
+        zone_y_max_ratio: 1.0
+      - type: or
+        sub_conditions:
+        - type: contain
+          subject: Target
+          target: jig
+          min_thr: 0.9
+        - type: stationary
+          subject: Target
+          history_len: 10
+          min_iou: 0.85
+    hold_frames: 30
+    grace_miss: 30
+  score_rules:
+    verification:
+      component: Target
+      prerequisite: true
+      mode: zone_transition
+      post_frames: 60
+      min_hits: 1
+- id: take_heatsink_1
+  description: 'Nhóm tác vụ độc lập: Lấy 1 kiện từ khay kéo ra khỏi khay. (lần 1)'
+  max_action_frames: 0
+  timer_start_phase: 0
+  phases:
+  - id: hand_enters_container_but_not_target
+    conditions:
+    - type: contain
+      subject: hand
+      target: Container
+      min_thr: 0.35
+    - type: not_contain
+      subject: hand
+      target: Target
+      max_thr: 0.3
+    - type: or
+      sub_conditions:
+      - type: iou
+        subject: hand
+        target: Component
+        min_thr: 0.005
+    hold_frames: 4
+    grace_miss: 20
+  - id: hand_leaves_container_or_enters_target
+    conditions:
+    - type: or
+      sub_conditions:
+      - type: not_contain
+        subject: hand
+        target: Container
+        max_thr: 0.3
+      - type: contain
+        subject: hand
+        target: Target
+        min_thr: 0.3
+    hold_frames: 3
+    grace_miss: 20
+  score_rules:
+    spatial:
+      subject: hand
+      target: Container
+      weight: 1.0
+    temporal:
+      subject: hand
+      target: Container
+      threshold: 0.3
+      min_frames: 5
+      max_frames: 40
+      weight: 0.5
+    verification:
+      effector: hand
+      component: Component
+      post_frames: 60
+      min_hits: 3
+      weight: 3.0
+      prerequisite: true
+- id: attach_heatsink_1
+  description: 'Nhóm tác vụ độc lập: Gắn linh kiện lên đích. (lần 1)'
+  max_action_frames: 180
+  timer_start_phase: 1
+  phases:
+  - id: hand_moves_to_target
+    conditions:
+    - type: contain
+      subject: hand
+      target: Target
+      min_thr: 0.2
+    - type: stationary
+      subject: Target
+      history_len: 15
+      min_iou: 0.75
+    - type: not_iou
+      subject: hand
+      target: screw driver
+      max_thr: 0.05
+    hold_frames: 3
+    grace_miss: 20
+  - id: component_placed_on_target
+    conditions:
+    - type: or
+      sub_conditions:
+      - type: contain
+        subject: Component
+        target: Target
+        min_thr: 0.2
+      - type: history_exists
+        subject: Component
+        history_len: 10
+        min_frames: 1
+    hold_frames: 3
+    grace_miss: 15
+  - id: hand_leaves_target_or_enters_container
+    conditions:
+    - type: or
+      sub_conditions:
+      - type: not_contain
+        subject: hand
+        target: Target
+        max_thr: 0.2
+      - type: contain
+        subject: hand
+        target: Container
+        min_thr: 0.4
+      - type: iou
+        subject: hand
+        target: screw driver
+        min_thr: 0.1
+    hold_frames: 10
+    grace_miss: 20
+    wait_for_flip: true
+    min_false_frames: 3
+  score_rules:
+    spatial:
+      subject: hand
+      target: Target
+      weight: 1.0
+    temporal:
+      subject: hand
+      target: Target
+      threshold: 0.3
+      min_frames: 5
+      max_frames: 40
+      weight: 0.5
+- id: attach_screw_1
+  description: 'Tác vụ: Bắn vít (cầm screw driver lấy vít từ screw machine và bắn
+    lên fixture). (lần 1)'
+  max_action_frames: 0
+  timer_start_phase: 0
+  phases:
+  - id: driver_at_screw_machine
+    conditions:
+    - type: and
+      sub_conditions:
+      - type: iou
+        subject: hand
+        target: screw driver
+        min_thr: 0.05
+      - type: or
+        sub_conditions:
+        - type: iou
+          subject: screw driver
+          target: screw machine
+          min_thr: 0.02
+        - type: iou
+          subject: hand
+          target: screw machine
+          min_thr: 0.05
+    hold_frames: 1
+    grace_miss: 35
+  - id: driver_at_fixture
+    conditions:
+    - type: or
+      sub_conditions:
+      - type: iou
+        subject: screw driver
+        subject_region: bottom_half
+        target: fixture
+        min_thr: 0.02
+    hold_frames: 2
+    grace_miss: 40
+  - id: driver_leaves_fixture
+    conditions:
+    - type: not_iou
+      subject: screw driver
+      subject_region: bottom_half
+      target: fixture
+      max_thr: 0.02
+    hold_frames: 2
+    grace_miss: 30
+    wait_for_flip: true
+    min_false_frames: 3
+- id: attach_screw_2
+  description: 'Tác vụ: Bắn vít (cầm screw driver lấy vít từ screw machine và bắn
+    lên fixture). (lần 2)'
+  max_action_frames: 0
+  timer_start_phase: 0
+  phases:
+  - id: driver_at_screw_machine
+    conditions:
+    - type: and
+      sub_conditions:
+      - type: iou
+        subject: hand
+        target: screw driver
+        min_thr: 0.05
+      - type: or
+        sub_conditions:
+        - type: iou
+          subject: screw driver
+          target: screw machine
+          min_thr: 0.02
+        - type: iou
+          subject: hand
+          target: screw machine
+          min_thr: 0.05
+    hold_frames: 1
+    grace_miss: 35
+  - id: driver_at_fixture
+    conditions:
+    - type: or
+      sub_conditions:
+      - type: iou
+        subject: screw driver
+        subject_region: bottom_half
+        target: fixture
+        min_thr: 0.02
+    hold_frames: 2
+    grace_miss: 40
+  - id: driver_leaves_fixture
+    conditions:
+    - type: not_iou
+      subject: screw driver
+      subject_region: bottom_half
+      target: fixture
+      max_thr: 0.02
+    hold_frames: 2
+    grace_miss: 30
+    wait_for_flip: true
+    min_false_frames: 3
+- id: attach_screw_3
+  description: 'Tác vụ: Bắn vít (cầm screw driver lấy vít từ screw machine và bắn
+    lên fixture). (lần 3)'
+  max_action_frames: 0
+  timer_start_phase: 0
+  phases:
+  - id: driver_at_screw_machine
+    conditions:
+    - type: and
+      sub_conditions:
+      - type: iou
+        subject: hand
+        target: screw driver
+        min_thr: 0.05
+      - type: or
+        sub_conditions:
+        - type: iou
+          subject: screw driver
+          target: screw machine
+          min_thr: 0.02
+        - type: iou
+          subject: hand
+          target: screw machine
+          min_thr: 0.05
+    hold_frames: 1
+    grace_miss: 35
+  - id: driver_at_fixture
+    conditions:
+    - type: or
+      sub_conditions:
+      - type: iou
+        subject: screw driver
+        subject_region: bottom_half
+        target: fixture
+        min_thr: 0.02
+    hold_frames: 2
+    grace_miss: 40
+  - id: driver_leaves_fixture
+    conditions:
+    - type: not_iou
+      subject: screw driver
+      subject_region: bottom_half
+      target: fixture
+      max_thr: 0.02
+    hold_frames: 2
+    grace_miss: 30
+    wait_for_flip: true
+    min_false_frames: 3
+- id: attach_screw_4
+  description: 'Tác vụ: Bắn vít (cầm screw driver lấy vít từ screw machine và bắn
+    lên fixture). (lần 4)'
+  max_action_frames: 0
+  timer_start_phase: 0
+  phases:
+  - id: driver_at_screw_machine
+    conditions:
+    - type: and
+      sub_conditions:
+      - type: iou
+        subject: hand
+        target: screw driver
+        min_thr: 0.05
+      - type: or
+        sub_conditions:
+        - type: iou
+          subject: screw driver
+          target: screw machine
+          min_thr: 0.02
+        - type: iou
+          subject: hand
+          target: screw machine
+          min_thr: 0.05
+    hold_frames: 1
+    grace_miss: 35
+  - id: driver_at_fixture
+    conditions:
+    - type: or
+      sub_conditions:
+      - type: iou
+        subject: screw driver
+        subject_region: bottom_half
+        target: fixture
+        min_thr: 0.02
+    hold_frames: 2
+    grace_miss: 40
+  - id: driver_leaves_fixture
+    conditions:
+    - type: not_iou
+      subject: screw driver
+      subject_region: bottom_half
+      target: fixture
+      max_thr: 0.02
+    hold_frames: 2
+    grace_miss: 30
+    wait_for_flip: true
+    min_false_frames: 3
+- id: attach_screw_5
+  description: 'Tác vụ: Bắn vít (cầm screw driver lấy vít từ screw machine và bắn
+    lên fixture). (lần 5)'
+  max_action_frames: 0
+  timer_start_phase: 0
+  phases:
+  - id: driver_at_screw_machine
+    conditions:
+    - type: and
+      sub_conditions:
+      - type: iou
+        subject: hand
+        target: screw driver
+        min_thr: 0.05
+      - type: or
+        sub_conditions:
+        - type: iou
+          subject: screw driver
+          target: screw machine
+          min_thr: 0.02
+        - type: iou
+          subject: hand
+          target: screw machine
+          min_thr: 0.05
+    hold_frames: 1
+    grace_miss: 35
+  - id: driver_at_fixture
+    conditions:
+    - type: or
+      sub_conditions:
+      - type: iou
+        subject: screw driver
+        subject_region: bottom_half
+        target: fixture
+        min_thr: 0.02
+    hold_frames: 2
+    grace_miss: 40
+  - id: driver_leaves_fixture
+    conditions:
+    - type: not_iou
+      subject: screw driver
+      subject_region: bottom_half
+      target: fixture
+      max_thr: 0.02
+    hold_frames: 2
+    grace_miss: 30
+    wait_for_flip: true
+    min_false_frames: 3
+- id: attach_screw_6
+  description: 'Tác vụ: Bắn vít (cầm screw driver lấy vít từ screw machine và bắn
+    lên fixture). (lần 6)'
+  max_action_frames: 0
+  timer_start_phase: 0
+  phases:
+  - id: driver_at_screw_machine
+    conditions:
+    - type: and
+      sub_conditions:
+      - type: iou
+        subject: hand
+        target: screw driver
+        min_thr: 0.05
+      - type: or
+        sub_conditions:
+        - type: iou
+          subject: screw driver
+          target: screw machine
+          min_thr: 0.02
+        - type: iou
+          subject: hand
+          target: screw machine
+          min_thr: 0.05
+    hold_frames: 1
+    grace_miss: 35
+  - id: driver_at_fixture
+    conditions:
+    - type: or
+      sub_conditions:
+      - type: iou
+        subject: screw driver
+        subject_region: bottom_half
+        target: fixture
+        min_thr: 0.02
+    hold_frames: 2
+    grace_miss: 40
+  - id: driver_leaves_fixture
+    conditions:
+    - type: not_iou
+      subject: screw driver
+      subject_region: bottom_half
+      target: fixture
+      max_thr: 0.02
+    hold_frames: 2
+    grace_miss: 30
+    wait_for_flip: true
+    min_false_frames: 3
+- id: return_board
+  description: 'Nhóm tác vụ độc lập: Lấy board đặt lại chuyền. (Chỉ tính giờ từ khi
+    board TỪ TRONG jig bắt đầu bị rút ra). Hỗ trợ camera nhìn thấy truyền: kết thúc
+    khi board rời khỏi khu vực thao tác (3/4 dưới).'
+  max_action_frames: 0
+  timer_start_phase: 1
+  phases:
+  - id: board_stable_in_jig_or_static
+    conditions:
+    - type: or
+      sub_conditions:
+      - type: contain
+        subject: Target
+        target: jig
+        min_thr: 0.9
+      - type: stationary
+        subject: Target
+        history_len: 10
+        min_iou: 0.85
+    hold_frames: 30
+  - id: board_starts_leaving_stable_state
+    conditions:
+    - type: or
+      sub_conditions:
+      - type: not_contain
+        subject: Target
+        target: jig
+        max_thr: 0.88
+      - type: missing
+        subject: Target
+      - type: missing_in_zone
+        subject: Target
+        zone_y_min_ratio: 0.25
+        zone_y_max_ratio: 1.0
+    hold_frames: 15
+    grace_miss: 30
+  - id: board_gone_from_work_area
+    conditions:
+    - type: or
+      sub_conditions:
+      - type: missing
+        subject: Target
+      - type: missing_in_zone
+        subject: Target
+        zone_y_min_ratio: 0.25
+        zone_y_max_ratio: 1.0
+    hold_frames: 4
+    grace_miss: 10
+  score_rules:
+    verification:
+      component: Target
+      prerequisite: true
+      mode: zone_transition
+      post_frames: 60
+      min_hits: 1
+- id: put_board_2
+  description: 'Nhóm tác vụ độc lập: Đặt board vào jig. Hỗ trợ 2 nhánh: (A) board
+    mới xuất hiện từ ngoài frame, (B) hand mang board từ truyền (1/4 trên) xuống khu
+    vực thao tác (3/4 dưới). Hoàn thành khi board nằm gọn trong jig hoặc đứng yên.
+    (lần 2)'
+  max_action_frames: 0
+  phases:
+  - id: wait_board_appear
+    conditions:
+    - type: or
+      sub_conditions:
+      - type: and
+        sub_conditions:
+        - type: exists
+          subject: Target
+          min_count: 1
+        - type: history_missing
+          subject: Target
+          history_len: 20
+          min_missing_frames: 15
+      - type: and
+        sub_conditions:
+        - type: iou_in_zone
+          subject: hand
+          target: Target
+          zone_y_min_ratio: 0.0
+          zone_y_max_ratio: 0.25
+          target_zone_y_min_ratio: 0.0
+          target_zone_y_max_ratio: 0.25
+          min_thr: 0.05
+    hold_frames: 3
+    grace_miss: 10
+  - id: put_board_in_jig_or_static
+    lock_subject_from_phase0: true
+    conditions:
+    - type: and
+      sub_conditions:
+      - type: exists_in_zone
+        subject: Target
+        zone_y_min_ratio: 0.25
+        zone_y_max_ratio: 1.0
+      - type: or
+        sub_conditions:
+        - type: contain
+          subject: Target
+          target: jig
+          min_thr: 0.9
+        - type: stationary
+          subject: Target
+          history_len: 10
+          min_iou: 0.85
+    hold_frames: 30
+    grace_miss: 30
+  score_rules:
+    verification:
+      component: Target
+      prerequisite: true
+      mode: zone_transition
+      post_frames: 60
+      min_hits: 1
+- id: take_heatsink_2
+  description: 'Nhóm tác vụ độc lập: Lấy 1 kiện từ khay kéo ra khỏi khay. (lần 2)'
+  max_action_frames: 0
+  timer_start_phase: 0
+  phases:
+  - id: hand_enters_container_but_not_target
+    conditions:
+    - type: contain
+      subject: hand
+      target: Container
+      min_thr: 0.35
+    - type: not_contain
+      subject: hand
+      target: Target
+      max_thr: 0.3
+    - type: or
+      sub_conditions:
+      - type: iou
+        subject: hand
+        target: Component
+        min_thr: 0.005
+    hold_frames: 4
+    grace_miss: 20
+  - id: hand_leaves_container_or_enters_target
+    conditions:
+    - type: or
+      sub_conditions:
+      - type: not_contain
+        subject: hand
+        target: Container
+        max_thr: 0.3
+      - type: contain
+        subject: hand
+        target: Target
+        min_thr: 0.3
+    hold_frames: 3
+    grace_miss: 20
+  score_rules:
+    spatial:
+      subject: hand
+      target: Container
+      weight: 1.0
+    temporal:
+      subject: hand
+      target: Container
+      threshold: 0.3
+      min_frames: 5
+      max_frames: 40
+      weight: 0.5
+    verification:
+      effector: hand
+      component: Component
+      post_frames: 60
+      min_hits: 3
+      weight: 3.0
+      prerequisite: true
+- id: attach_heatsink_2
+  description: 'Nhóm tác vụ độc lập: Gắn linh kiện lên đích. (lần 2)'
+  max_action_frames: 180
+  timer_start_phase: 1
+  phases:
+  - id: hand_moves_to_target
+    conditions:
+    - type: contain
+      subject: hand
+      target: Target
+      min_thr: 0.2
+    - type: stationary
+      subject: Target
+      history_len: 15
+      min_iou: 0.75
+    - type: not_iou
+      subject: hand
+      target: screw driver
+      max_thr: 0.05
+    hold_frames: 3
+    grace_miss: 20
+  - id: component_placed_on_target
+    conditions:
+    - type: or
+      sub_conditions:
+      - type: contain
+        subject: Component
+        target: Target
+        min_thr: 0.2
+      - type: history_exists
+        subject: Component
+        history_len: 10
+        min_frames: 1
+    hold_frames: 3
+    grace_miss: 15
+  - id: hand_leaves_target_or_enters_container
+    conditions:
+    - type: or
+      sub_conditions:
+      - type: not_contain
+        subject: hand
+        target: Target
+        max_thr: 0.2
+      - type: contain
+        subject: hand
+        target: Container
+        min_thr: 0.4
+      - type: iou
+        subject: hand
+        target: screw driver
+        min_thr: 0.1
+    hold_frames: 10
+    grace_miss: 20
+    wait_for_flip: true
+    min_false_frames: 3
+  score_rules:
+    spatial:
+      subject: hand
+      target: Target
+      weight: 1.0
+    temporal:
+      subject: hand
+      target: Target
+      threshold: 0.3
+      min_frames: 5
+      max_frames: 40
+      weight: 0.5
+- id: attach_screw_7
+  description: 'Tác vụ: Bắn vít (cầm screw driver lấy vít từ screw machine và bắn
+    lên fixture). (lần 7)'
+  max_action_frames: 0
+  timer_start_phase: 0
+  phases:
+  - id: driver_at_screw_machine
+    conditions:
+    - type: and
+      sub_conditions:
+      - type: iou
+        subject: hand
+        target: screw driver
+        min_thr: 0.05
+      - type: or
+        sub_conditions:
+        - type: iou
+          subject: screw driver
+          target: screw machine
+          min_thr: 0.02
+        - type: iou
+          subject: hand
+          target: screw machine
+          min_thr: 0.05
+    hold_frames: 1
+    grace_miss: 35
+  - id: driver_at_fixture
+    conditions:
+    - type: or
+      sub_conditions:
+      - type: iou
+        subject: screw driver
+        subject_region: bottom_half
+        target: fixture
+        min_thr: 0.02
+    hold_frames: 2
+    grace_miss: 40
+  - id: driver_leaves_fixture
+    conditions:
+    - type: not_iou
+      subject: screw driver
+      subject_region: bottom_half
+      target: fixture
+      max_thr: 0.02
+    hold_frames: 2
+    grace_miss: 30
+    wait_for_flip: true
+    min_false_frames: 3
+- id: attach_screw_8
+  description: 'Tác vụ: Bắn vít (cầm screw driver lấy vít từ screw machine và bắn
+    lên fixture). (lần 8)'
+  max_action_frames: 0
+  timer_start_phase: 0
+  phases:
+  - id: driver_at_screw_machine
+    conditions:
+    - type: and
+      sub_conditions:
+      - type: iou
+        subject: hand
+        target: screw driver
+        min_thr: 0.05
+      - type: or
+        sub_conditions:
+        - type: iou
+          subject: screw driver
+          target: screw machine
+          min_thr: 0.02
+        - type: iou
+          subject: hand
+          target: screw machine
+          min_thr: 0.05
+    hold_frames: 1
+    grace_miss: 35
+  - id: driver_at_fixture
+    conditions:
+    - type: or
+      sub_conditions:
+      - type: iou
+        subject: screw driver
+        subject_region: bottom_half
+        target: fixture
+        min_thr: 0.02
+    hold_frames: 2
+    grace_miss: 40
+  - id: driver_leaves_fixture
+    conditions:
+    - type: not_iou
+      subject: screw driver
+      subject_region: bottom_half
+      target: fixture
+      max_thr: 0.02
+    hold_frames: 2
+    grace_miss: 30
+    wait_for_flip: true
+    min_false_frames: 3
+- id: attach_screw_9
+  description: 'Tác vụ: Bắn vít (cầm screw driver lấy vít từ screw machine và bắn
+    lên fixture). (lần 9)'
+  max_action_frames: 0
+  timer_start_phase: 0
+  phases:
+  - id: driver_at_screw_machine
+    conditions:
+    - type: and
+      sub_conditions:
+      - type: iou
+        subject: hand
+        target: screw driver
+        min_thr: 0.05
+      - type: or
+        sub_conditions:
+        - type: iou
+          subject: screw driver
+          target: screw machine
+          min_thr: 0.02
+        - type: iou
+          subject: hand
+          target: screw machine
+          min_thr: 0.05
+    hold_frames: 1
+    grace_miss: 35
+  - id: driver_at_fixture
+    conditions:
+    - type: or
+      sub_conditions:
+      - type: iou
+        subject: screw driver
+        subject_region: bottom_half
+        target: fixture
+        min_thr: 0.02
+    hold_frames: 2
+    grace_miss: 40
+  - id: driver_leaves_fixture
+    conditions:
+    - type: not_iou
+      subject: screw driver
+      subject_region: bottom_half
+      target: fixture
+      max_thr: 0.02
+    hold_frames: 2
+    grace_miss: 30
+    wait_for_flip: true
+    min_false_frames: 3
+- id: attach_screw_10
+  description: 'Tác vụ: Bắn vít (cầm screw driver lấy vít từ screw machine và bắn
+    lên fixture). (lần 10)'
+  max_action_frames: 0
+  timer_start_phase: 0
+  phases:
+  - id: driver_at_screw_machine
+    conditions:
+    - type: and
+      sub_conditions:
+      - type: iou
+        subject: hand
+        target: screw driver
+        min_thr: 0.05
+      - type: or
+        sub_conditions:
+        - type: iou
+          subject: screw driver
+          target: screw machine
+          min_thr: 0.02
+        - type: iou
+          subject: hand
+          target: screw machine
+          min_thr: 0.05
+    hold_frames: 1
+    grace_miss: 35
+  - id: driver_at_fixture
+    conditions:
+    - type: or
+      sub_conditions:
+      - type: iou
+        subject: screw driver
+        subject_region: bottom_half
+        target: fixture
+        min_thr: 0.02
+    hold_frames: 2
+    grace_miss: 40
+  - id: driver_leaves_fixture
+    conditions:
+    - type: not_iou
+      subject: screw driver
+      subject_region: bottom_half
+      target: fixture
+      max_thr: 0.02
+    hold_frames: 2
+    grace_miss: 30
+    wait_for_flip: true
+    min_false_frames: 3
+- id: attach_screw_11
+  description: 'Tác vụ: Bắn vít (cầm screw driver lấy vít từ screw machine và bắn
+    lên fixture). (lần 11)'
+  max_action_frames: 0
+  timer_start_phase: 0
+  phases:
+  - id: driver_at_screw_machine
+    conditions:
+    - type: and
+      sub_conditions:
+      - type: iou
+        subject: hand
+        target: screw driver
+        min_thr: 0.05
+      - type: or
+        sub_conditions:
+        - type: iou
+          subject: screw driver
+          target: screw machine
+          min_thr: 0.02
+        - type: iou
+          subject: hand
+          target: screw machine
+          min_thr: 0.05
+    hold_frames: 1
+    grace_miss: 35
+  - id: driver_at_fixture
+    conditions:
+    - type: or
+      sub_conditions:
+      - type: iou
+        subject: screw driver
+        subject_region: bottom_half
+        target: fixture
+        min_thr: 0.02
+    hold_frames: 2
+    grace_miss: 40
+  - id: driver_leaves_fixture
+    conditions:
+    - type: not_iou
+      subject: screw driver
+      subject_region: bottom_half
+      target: fixture
+      max_thr: 0.02
+    hold_frames: 2
+    grace_miss: 30
+    wait_for_flip: true
+    min_false_frames: 3
+- id: attach_screw_12
+  description: 'Tác vụ: Bắn vít (cầm screw driver lấy vít từ screw machine và bắn
+    lên fixture). (lần 12)'
+  max_action_frames: 0
+  timer_start_phase: 0
+  phases:
+  - id: driver_at_screw_machine
+    conditions:
+    - type: and
+      sub_conditions:
+      - type: iou
+        subject: hand
+        target: screw driver
+        min_thr: 0.05
+      - type: or
+        sub_conditions:
+        - type: iou
+          subject: screw driver
+          target: screw machine
+          min_thr: 0.02
+        - type: iou
+          subject: hand
+          target: screw machine
+          min_thr: 0.05
+    hold_frames: 1
+    grace_miss: 35
+  - id: driver_at_fixture
+    conditions:
+    - type: or
+      sub_conditions:
+      - type: iou
+        subject: screw driver
+        subject_region: bottom_half
+        target: fixture
+        min_thr: 0.02
+    hold_frames: 2
+    grace_miss: 40
+  - id: driver_leaves_fixture
+    conditions:
+    - type: not_iou
+      subject: screw driver
+      subject_region: bottom_half
+      target: fixture
+      max_thr: 0.02
+    hold_frames: 2
+    grace_miss: 30
+    wait_for_flip: true
+    min_false_frames: 3
+- id: return_board_2
+  description: 'Nhóm tác vụ độc lập: Lấy board đặt lại chuyền. (Chỉ tính giờ từ khi
+    board TỪ TRONG jig bắt đầu bị rút ra). Hỗ trợ camera nhìn thấy truyền: kết thúc
+    khi board rời khỏi khu vực thao tác (3/4 dưới). (lần 2)'
+  max_action_frames: 0
+  timer_start_phase: 1
+  phases:
+  - id: board_stable_in_jig_or_static
+    conditions:
+    - type: or
+      sub_conditions:
+      - type: contain
+        subject: Target
+        target: jig
+        min_thr: 0.9
+      - type: stationary
+        subject: Target
+        history_len: 10
+        min_iou: 0.85
+    hold_frames: 30
+  - id: board_starts_leaving_stable_state
+    conditions:
+    - type: or
+      sub_conditions:
+      - type: not_contain
+        subject: Target
+        target: jig
+        max_thr: 0.88
+      - type: missing
+        subject: Target
+      - type: missing_in_zone
+        subject: Target
+        zone_y_min_ratio: 0.25
+        zone_y_max_ratio: 1.0
+    hold_frames: 15
+    grace_miss: 30
+  - id: board_gone_from_work_area
+    conditions:
+    - type: or
+      sub_conditions:
+      - type: missing
+        subject: Target
+      - type: missing_in_zone
+        subject: Target
+        zone_y_min_ratio: 0.25
+        zone_y_max_ratio: 1.0
+    hold_frames: 4
+    grace_miss: 10
+  score_rules:
+    verification:
+      component: Target
+      prerequisite: true
+      mode: zone_transition
+      post_frames: 60
+      min_hits: 1
+_inference_meta:
+  total_matches: 20
+  matches:
+  - action_id: put_board
+    source_template: put_board.yaml
+    start_frame: 57
+    match_start_frame: 1
+    end_frame: 122
+    confidence: 1.0
+  - action_id: take_heatsink_1
+    source_template: take_only.yaml
+    start_frame: 123
+    match_start_frame: 1
+    end_frame: 147
+    confidence: 1.0
+  - action_id: attach_heatsink_1
+    source_template: attach_only.yaml
+    start_frame: 173
+    match_start_frame: 173
+    end_frame: 209
+    confidence: 1.0
+  - action_id: attach_screw_1
+    source_template: attach_screw.yaml
+    start_frame: 210
+    match_start_frame: 189
+    end_frame: 267
+    confidence: 1.0
+  - action_id: attach_screw_2
+    source_template: attach_screw.yaml
+    start_frame: 268
+    match_start_frame: 369
+    end_frame: 411
+    confidence: 1.0
+  - action_id: attach_screw_3
+    source_template: attach_screw.yaml
+    start_frame: 412
+    match_start_frame: 477
+    end_frame: 500
+    confidence: 1.0
+  - action_id: attach_screw_4
+    source_template: attach_screw.yaml
+    start_frame: 501
+    match_start_frame: 541
+    end_frame: 556
+    confidence: 1.0
+  - action_id: attach_screw_5
+    source_template: attach_screw.yaml
+    start_frame: 557
+    match_start_frame: 609
+    end_frame: 631
+    confidence: 1.0
+  - action_id: attach_screw_6
+    source_template: attach_screw.yaml
+    start_frame: 632
+    match_start_frame: 681
+    end_frame: 702
+    confidence: 1.0
+  - action_id: return_board
+    source_template: return_board.yaml
+    start_frame: 742
+    match_start_frame: 705
+    end_frame: 763
+    confidence: 1.0
+  - action_id: put_board_2
+    source_template: put_board.yaml
+    start_frame: 832
+    match_start_frame: 757
+    end_frame: 894
+    confidence: 1.0
+  - action_id: take_heatsink_2
+    source_template: take_only.yaml
+    start_frame: 895
+    match_start_frame: 893
+    end_frame: 919
+    confidence: 1.0
+  - action_id: attach_heatsink_2
+    source_template: attach_only.yaml
+    start_frame: 950
+    match_start_frame: 929
+    end_frame: 985
+    confidence: 1.0
+  - action_id: attach_screw_7
+    source_template: attach_screw.yaml
+    start_frame: 986
+    match_start_frame: 961
+    end_frame: 1042
+    confidence: 1.0
+  - action_id: attach_screw_8
+    source_template: attach_screw.yaml
+    start_frame: 1043
+    match_start_frame: 1093
+    end_frame: 1110
+    confidence: 1.0
+  - action_id: attach_screw_9
+    source_template: attach_screw.yaml
+    start_frame: 1111
+    match_start_frame: 1153
+    end_frame: 1167
+    confidence: 1.0
+  - action_id: attach_screw_10
+    source_template: attach_screw.yaml
+    start_frame: 1168
+    match_start_frame: 1221
+    end_frame: 1244
+    confidence: 1.0
+  - action_id: attach_screw_11
+    source_template: attach_screw.yaml
+    start_frame: 1245
+    match_start_frame: 1289
+    end_frame: 1307
+    confidence: 1.0
+  - action_id: attach_screw_12
+    source_template: attach_screw.yaml
+    start_frame: 1308
+    match_start_frame: 1357
+    end_frame: 1375
+    confidence: 1.0
+  - action_id: return_board_2
+    source_template: return_board.yaml
+    start_frame: 1410
+    match_start_frame: 1369
+    end_frame: 1429
+    confidence: 1.0

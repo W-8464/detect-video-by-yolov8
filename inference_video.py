@@ -11,8 +11,8 @@ import yaml
 # - ROI model: detect shielding/gasket/bracket trong ROI (in-hand)
 # - Pose model: detect hand keypoints
 ROOT = Path(__file__).resolve().parent
-full_model_path = str((ROOT / 'runs/obb/obb_full_frame_v1/weights/best.pt').resolve())
-roi_model_path = str((ROOT / 'runs/obb/obb_roi_v1/weights/best.pt').resolve())
+full_model_path = str((ROOT / 'runs/obb/obb_full_frame_v2/weights/best.pt').resolve())
+roi_model_path = str((ROOT / 'runs/obb/obb_roi_v2/weights/best.pt').resolve())
 pose_model_path = str((ROOT / 'runs/pose/pose_hand_v7/weights/best.pt').resolve())
 
 full_model = YOLO(full_model_path)
@@ -104,12 +104,20 @@ SCREW_CLS = CLASS_NAME_TO_ID.get("screw", 11)
 SCREW_DRIVER_CLS = CLASS_NAME_TO_ID.get("screw driver", 12)
 SCREW_MACHINE_CLS = CLASS_NAME_TO_ID.get("screw machine", 13)
 FIXTURE_CLS = CLASS_NAME_TO_ID.get("fixture", 14)
+LIGHT_PIPE_ID = CLASS_NAME_TO_ID.get("light pipe", 15)
+BOTTOM_COVER_ID = CLASS_NAME_TO_ID.get("bottom cover", 16)
+REAR_PANEL_ID = CLASS_NAME_TO_ID.get("rear panel", 17)
+ENCLOSURE_ID = CLASS_NAME_TO_ID.get("enclosure", 18)
+LABEL_ID = CLASS_NAME_TO_ID.get("label", 19)
+SCANNER_ID = CLASS_NAME_TO_ID.get("scanner", 20)
 
 # Các class muốn track/vẽ từ full-frame model
 TRACK_FROM_FULL = [
     HAND_CLS, TWEEZERS_CLS, TRAY_CLS, BOARD_CLS, JIG_CLS, LINER_CLS,
     PCIE_CABLE_CLS, BRACKET_CLS, HEATSINK_CLS, SCREW_CLS,
-    SCREW_DRIVER_CLS, SCREW_MACHINE_CLS, FIXTURE_CLS
+    SCREW_DRIVER_CLS, SCREW_MACHINE_CLS, FIXTURE_CLS,
+    LIGHT_PIPE_ID, BOTTOM_COVER_ID, REAR_PANEL_ID, ENCLOSURE_ID,
+    LABEL_ID, SCANNER_ID
 ]
 
 # Khi log, ta in conf các class này; shielding/gasket vẫn áp dụng threshold riêng bên dưới.
@@ -120,7 +128,7 @@ def parse_args():
     parser.add_argument(
         "--input",
         type=str,
-        default=str((ROOT / "datasets/xb10_4_1.mp4").resolve()),
+        default=str((ROOT / "datasets/xb10_8_1.mp4").resolve()),
         help="Input video path",
     )
     parser.add_argument(
@@ -486,7 +494,7 @@ while True:
         for j in range(len(roi_cls_ids)):
             roi_cls = int(roi_cls_ids[j])
             full_cls = ROI_TO_FULL_CLASS.get(roi_cls, None)
-            if full_cls not in ROI_SMALL_CLASSES:  # chỉ quan tâm shielding/gasket/bracket
+            if full_cls not in ROI_SMALL_CLASSES:  # chỉ quan tâm shielding/gasket/bracket/label
                 continue
 
             poly = roi_polys[j].copy()

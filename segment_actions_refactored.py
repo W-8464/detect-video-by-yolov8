@@ -92,16 +92,16 @@ def cut_clip(video_path: Path, out_path: Path, start_frame: int, end_frame: int)
     writer.release()
     cap.release()
 
-def evaluate_condition(dets: List[Detection], cond: dict, class_groups: dict = None, history_frames: List[List[Detection]] = None, locked_track_id: Optional[int] = None) -> bool:
+def evaluate_condition(dets: List[Detection], cond: dict, class_groups: dict = None, history_frames: List[List[Detection]] = None, locked_track_id: Optional[int] = None, locked_subject_track_ids: Optional[set] = None) -> bool:
     class_groups = class_groups or {}
     
     c_type = cond.get("type", "")
     if c_type == "or":
         sub_conds = cond.get("sub_conditions", [])
-        return any(evaluate_condition(dets, sc, class_groups, history_frames, locked_track_id) for sc in sub_conds)
+        return any(evaluate_condition(dets, sc, class_groups, history_frames, locked_track_id, locked_subject_track_ids) for sc in sub_conds)
     if c_type == "and":
         sub_conds = cond.get("sub_conditions", [])
-        return all(evaluate_condition(dets, sc, class_groups, history_frames, locked_track_id) for sc in sub_conds)
+        return all(evaluate_condition(dets, sc, class_groups, history_frames, locked_track_id, locked_subject_track_ids) for sc in sub_conds)
 
     def get_classes(name: str) -> List[str]:
         if not name: return []
@@ -121,6 +121,8 @@ def evaluate_condition(dets: List[Detection], cond: dict, class_groups: dict = N
     subjs = sorted([d for d in dets if d.cls in subj_classes], key=lambda x: x.conf, reverse=True)
     if locked_track_id is not None:
         subjs = [d for d in subjs if d.track_id == locked_track_id]
+    if locked_subject_track_ids is not None:
+        subjs = [d for d in subjs if d.track_id in locked_subject_track_ids]
     tgts = sorted([d for d in dets if d.cls in tgt_classes], key=lambda x: x.conf, reverse=True)
 
     if c_type in ("not_contain", "not_iou"):
@@ -143,6 +145,62 @@ def evaluate_condition(dets: List[Detection], cond: dict, class_groups: dict = N
         if not past_frames: return False
         exists_count = sum(1 for past_dets in past_frames if any(d.cls in subj_classes for d in past_dets))
         return exists_count >= min_frames
+
+    # ── Zone-based conditions ──────────────────────────────────────────
+    # Filter detections by their center-y position relative to frame height.
+    # zone_y_min_ratio / zone_y_max_ratio define the vertical band (0.0=top, 1.0=bottom).
+    # Frame height is read from class_groups["_frame_height"] (default 1080).
+    def _in_zone(det: Detection, y_min_ratio: float, y_max_ratio: float, frame_h: int) -> bool:
+        cy = float(det.poly[:, 1].mean())
+        return (cy >= y_min_ratio * frame_h) and (cy <= y_max_ratio * frame_h)
+
+    def _get_zone_params(c: dict) -> Tuple[float, float, int]:
+        y_min_r = float(c.get("zone_y_min_ratio", 0.0))
+        y_max_r = float(c.get("zone_y_max_ratio", 1.0))
+        fh = int(class_groups.get("_frame_height", [1080])[0]) if isinstance(class_groups.get("_frame_height"), list) else int(class_groups.get("_frame_height", 1080))
+        return y_min_r, y_max_r, fh
+
+    if c_type == "exists_in_zone":
+        y_min_r, y_max_r, fh = _get_zone_params(cond)
+        min_count = int(cond.get("min_count", 1))
+        zone_dets = [d for d in dets if d.cls in subj_classes and _in_zone(d, y_min_r, y_max_r, fh)]
+        if locked_subject_track_ids is not None:
+            zone_dets = [d for d in zone_dets if d.track_id in locked_subject_track_ids]
+        return len(zone_dets) >= min_count
+
+    if c_type == "missing_in_zone":
+        y_min_r, y_max_r, fh = _get_zone_params(cond)
+        return not any(d.cls in subj_classes and _in_zone(d, y_min_r, y_max_r, fh) for d in dets)
+
+    if c_type == "iou_in_zone":
+        y_min_r, y_max_r, fh = _get_zone_params(cond)
+        min_thr = float(cond.get("min_thr", 0.05))
+        zone_subjs = [d for d in dets if d.cls in subj_classes and _in_zone(d, y_min_r, y_max_r, fh)]
+        # Target may be in same zone or a different zone specified by target_zone_*
+        tgt_y_min_r = float(cond.get("target_zone_y_min_ratio", y_min_r))
+        tgt_y_max_r = float(cond.get("target_zone_y_max_ratio", y_max_r))
+        zone_tgts = [d for d in dets if d.cls in tgt_classes and _in_zone(d, tgt_y_min_r, tgt_y_max_r, fh)]
+        if not zone_subjs or not zone_tgts:
+            return False
+        for s in zone_subjs:
+            s_box = aabb(s.poly)
+            for t in zone_tgts:
+                t_box = aabb(t.poly)
+                if iou_aabb(s_box, t_box) >= min_thr:
+                    return True
+        return False
+
+    if c_type == "history_missing_in_zone":
+        if not history_frames: return True
+        y_min_r, y_max_r, fh = _get_zone_params(cond)
+        history_len = int(cond.get("history_len", 30))
+        past_frames = history_frames[-history_len:] if history_len > 0 else history_frames
+        if not past_frames: return True
+        missing_count = sum(
+            1 for past_dets in past_frames
+            if not any(d.cls in subj_classes and _in_zone(d, y_min_r, y_max_r, fh) for d in past_dets)
+        )
+        return missing_count >= int(cond.get("min_missing_frames", history_len))
 
     if c_type == "stationary":
         if not subjs: return False

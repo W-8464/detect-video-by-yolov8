@@ -8,14 +8,21 @@ global:
       - "gasket"
       - "heatsink"
       - "screw"
+      - "light pipe"
+      - "rear panel"
+      - "label"
     Tool:
       - "tweezers"
       - "screw driver"
+      - "scanner"
     Target:
       - "board"
       - "bracket"
+      - "enclosure"
+      - "bottom cover"
     Container:
       - "tray"
+    _frame_height: 1080
 
   class_colors:
     hand:       [0, 255, 0]
@@ -33,27 +40,24 @@ global:
     "screw driver": [100, 200, 100]
     "screw machine": [100, 100, 200]
     fixture:    [50, 50, 50]
+    "light pipe": [255, 150, 150]
+    "bottom cover": [150, 255, 150]
+    "rear panel": [150, 150, 255]
+    enclosure:  [200, 200, 100]
+    label:      [100, 200, 200]
+    scanner:    [200, 100, 200]
 
   roi_model_mapping:
     0: hand
-    1: tray
-    2: board
-    3: jig
-    4: liner
-    5: tweezers
-    6: shielding
-    7: PCIe cable
-    8: gasket
-    9: bracket
-    10: heatsink
-    11: screw
-    12: "screw driver"
-    13: "screw machine"
-    14: fixture
+    1: tweezers
+    2: shielding
+    3: gasket
+    4: label
 
   roi_small_classes:
     - shielding
     - gasket
+    - label
 
   tuning:
     conf_threshold: 0.55

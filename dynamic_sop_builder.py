@@ -37,6 +37,12 @@ DEFAULT_CLASS_COLORS = {
     "PCIe cable": (255, 0, 255),
     "gasket": (128, 0, 255),
     "bracket": (0, 128, 255),
+    "light pipe": (255, 150, 150),
+    "bottom cover": (150, 255, 150),
+    "rear panel": (150, 150, 255),
+    "enclosure": (200, 200, 100),
+    "label": (100, 200, 200),
+    "scanner": (200, 100, 200),
 }
 
 TAKE_GASKET_ACTION_ID = "take_gasket"
@@ -197,6 +203,7 @@ class ActionTemplate:
         phase_scores: List[float] = []
         actual_start_cursor = -1
         timer_start_cursor = -1
+        locked_subject_track_ids: Optional[set] = None  # Track IDs of the Target being manipulated
 
         for p_idx, phase in enumerate(phases):
             hold = max(1, int(phase.get("hold_frames", 1)))
@@ -205,10 +212,21 @@ class ActionTemplate:
             missed_streak = 0
             phase_start_cursor = cursor
 
+            # Check if this phase requires locking to the subject from a prior phase
+            if phase.get("lock_subject_from_phase0", False) and locked_subject_track_ids is None and actual_start_cursor >= 0:
+                # Identify which Target was being moved (has the most displacement)
+                # by comparing positions between Phase 0 start and now
+                locked_subject_track_ids = self._identify_moving_target(
+                    frames, actual_start_cursor, cursor, class_groups
+                )
+
             while cursor < len(frames):
                 conds = phase.get("conditions", [])
                 history_frames = frames[max(0, cursor - 30):cursor]
-                met = all(evaluate_condition(frames[cursor], c, class_groups, history_frames) for c in conds)
+                met = all(evaluate_condition(
+                    frames[cursor], c, class_groups, history_frames,
+                    locked_subject_track_ids=locked_subject_track_ids
+                ) for c in conds)
                 if met:
                     matched_frames += 1
                     missed_streak = 0
@@ -257,6 +275,77 @@ class ActionTemplate:
             return actual_start_cursor, cursor, 0.0, timer_start_cursor, None
         
         return actual_start_cursor, cursor, confidence, timer_start_cursor, hand_track_ids
+
+    @staticmethod
+    def _identify_moving_target(
+        frames: List[List[Detection]],
+        start_cursor: int,
+        end_cursor: int,
+        class_groups: Dict[str, List[str]],
+    ) -> Optional[set]:
+        """Identify which Target track_id is being actively manipulated.
+        
+        Strategy:
+        1. Primary: Find the Target that has the highest IoU with any hand 
+           during the phase 0 window. This is the Target being carried.
+        2. Fallback: If no hand-target IoU is found, use displacement to 
+           identify the most-moving Target.
+        
+        Returns a set containing that track_id, or None if no Target 
+        can be identified.
+        """
+        target_classes = set(class_groups.get("Target", []))
+        if not target_classes:
+            return None
+
+        # Strategy 1: Find the Target with highest hand IoU during phase 0
+        target_hand_iou: Dict[int, float] = {}  # {target_track_id: cumulative_iou}
+        for idx in range(start_cursor, min(end_cursor + 1, len(frames))):
+            hands = [d for d in frames[idx] if d.cls == "hand"]
+            targets = [d for d in frames[idx] if d.cls in target_classes and d.track_id is not None]
+            for t in targets:
+                t_box = aabb(t.poly)
+                for h in hands:
+                    h_box = aabb(h.poly)
+                    iou_val = iou_aabb(h_box, t_box)
+                    if iou_val > 0.01:
+                        target_hand_iou[t.track_id] = target_hand_iou.get(t.track_id, 0.0) + iou_val
+
+        if target_hand_iou:
+            best_tid = max(target_hand_iou, key=target_hand_iou.get)
+            if target_hand_iou[best_tid] > 0.05:  # Minimum cumulative IoU threshold
+                return {best_tid}
+
+        # Strategy 2 (fallback): Find the Target with the most displacement
+        track_positions: Dict[int, Dict[str, float]] = {}
+        for idx in range(start_cursor, min(end_cursor + 1, len(frames))):
+            for d in frames[idx]:
+                if d.cls not in target_classes or d.track_id is None:
+                    continue
+                cy = float(d.poly[:, 1].mean())
+                cx = float(d.poly[:, 0].mean())
+                if d.track_id not in track_positions:
+                    track_positions[d.track_id] = {"first_y": cy, "last_y": cy, "first_x": cx, "last_x": cx}
+                else:
+                    track_positions[d.track_id]["last_y"] = cy
+                    track_positions[d.track_id]["last_x"] = cx
+
+        if not track_positions:
+            return None
+
+        best_tid = None
+        max_disp = -1.0
+        for tid, pos in track_positions.items():
+            disp = ((pos["last_y"] - pos["first_y"]) ** 2 + (pos["last_x"] - pos["first_x"]) ** 2) ** 0.5
+            if disp > max_disp:
+                max_disp = disp
+                best_tid = tid
+
+        fh = int(class_groups.get("_frame_height", [1080])[0]) if isinstance(class_groups.get("_frame_height"), list) else int(class_groups.get("_frame_height", 1080))
+        if best_tid is not None and max_disp > fh * 0.03:
+            return {best_tid}
+
+        return None
 
     def phase_met(
         self,
@@ -358,30 +447,71 @@ class ActionTemplate:
         action_start = max(0, start_frame)
         action_end = min(total_frames, end_frame)
         verify_end = min(total_frames, end_frame + post_frames)
+        mode = verification.get("mode", "default")
 
-        # Phase A: which components were inside Container at action start?
-        # A component that was never in the tray cannot be "taken from tray".
+        # Phase A: Handle zone_transition or container checks
         was_in_container: Dict[str, bool] = {}
-        for i in range(action_start, min(total_frames, action_start + self.min_match_frames)):
-            frame_dets = frames[i]
-            container_dets = [d for d in frame_dets if d.cls in container_classes]
-            for c in frame_dets:
-                if c.cls not in component_classes:
-                    continue
-                if c.cls in was_in_container:
-                    continue
-                if container_dets:
-                    c_bbox = aabb(c.poly)
-                    if any(contain_ratio_aabb(c_bbox, aabb(ct.poly)) >= 0.30 for ct in container_dets):
-                        was_in_container[c.cls] = True
+        effective_hand_ids = hand_track_ids
+        
+        if mode == "zone_transition":
+            # Determine which hand actually moved from 1/4 to 3/4 (for put) or vice-versa (for return)
+            fh = int(class_groups.get("_frame_height", [1080])[0]) if isinstance(class_groups.get("_frame_height"), list) else int(class_groups.get("_frame_height", 1080))
+            
+            # Record min/max Y for each hand across the action span to find the primary "moving" hand
+            hand_y_ranges: Dict[int, Dict[str, float]] = {}
+            for i in range(action_start, action_end):
+                for d in frames[i]:
+                    if d.cls == "hand" and d.track_id is not None:
+                        if hand_track_ids is None or d.track_id in hand_track_ids:
+                            cy = float(d.poly[:, 1].mean())
+                            if d.track_id not in hand_y_ranges:
+                                hand_y_ranges[d.track_id] = {"first_y": cy, "last_y": cy}
+                            else:
+                                 hand_y_ranges[d.track_id]["last_y"] = cy
+            
+            if hand_y_ranges:
+                best_hand = None
+                max_abs_disp = -1
+                for tid, data in hand_y_ranges.items():
+                    disp = data["last_y"] - data["first_y"]
+                    if abs(disp) > max_abs_disp:
+                        max_abs_disp = abs(disp)
+                        best_hand = tid
+                
+                if best_hand is not None and max_abs_disp > fh * 0.05:
+                    effective_hand_ids = {best_hand}
+            
+            # Identify targets at the beginning of the action window to mark eligible classes.
+            # We mark a class as eligible if it has any detections.
+            # The moving hand's IoU will then distinguish between the carried object and background objects.
+            for comp_cls in component_classes:
+                was_in_container[comp_cls] = False
+                
+            for i in range(action_start, min(total_frames, action_start + self.min_match_frames)):
+                for d in frames[i]:
+                    if d.cls in component_classes:
+                        was_in_container[d.cls] = True
+        else:
+            # Phase A default: which components were inside Container at action start?
+            for i in range(action_start, min(total_frames, action_start + self.min_match_frames)):
+                frame_dets = frames[i]
+                container_dets = [d for d in frame_dets if d.cls in container_classes]
+                for c in frame_dets:
+                    if c.cls not in component_classes:
+                        continue
+                    if c.cls in was_in_container:
+                        continue
+                    if container_dets:
+                        c_bbox = aabb(c.poly)
+                        if any(contain_ratio_aabb(c_bbox, aabb(ct.poly)) >= 0.30 for ct in container_dets):
+                            was_in_container[c.cls] = True
         for comp_cls in component_classes:
             if comp_cls not in was_in_container:
                 was_in_container[comp_cls] = False
 
         # Phase B: accumulate IoU between hand and component during action + post frames
         # Refinement for 'take' actions: identify the specific hand track ID that actually entered the container.
-        effective_hand_ids = hand_track_ids
-        if hand_track_ids and self.base_id in ("take_component", "take_only", "take_from_liner", "take_liner"):
+        if mode != "zone_transition" and hand_track_ids and self.base_id in ("take_component", "take_only", "take_from_liner", "take_liner"):
             hand_scores: Dict[int, float] = {}
             for fi in range(action_start, action_end):
                 containers = [d for d in frames[fi] if d.cls in container_classes]
@@ -396,8 +526,12 @@ class ActionTemplate:
                 if hand_scores[best_tid] > 0.1:
                     effective_hand_ids = {best_tid}
 
+        # Phase B: accumulate IoU between hand and component during action + post frames
         iou_per_class: Dict[str, float] = {}
         hit_frames_per_class: Dict[str, int] = {}
+        comp_y_displacement: Dict[str, float] = {} # Track movement of components
+        comp_start_y: Dict[str, float] = {}
+
         for i in range(action_start, verify_end):
             frame_dets = frames[i]
             hand_dets = [d for d in frame_dets if d.cls == "hand"]
@@ -410,18 +544,33 @@ class ActionTemplate:
                 h_bbox = aabb(h.poly)
                 for c in comp_dets:
                     c_bbox = aabb(c.poly)
+                    cy = float(c.poly[:, 1].mean())
+                    
+                    # Track movement
+                    if c.cls not in comp_start_y:
+                        comp_start_y[c.cls] = cy
+                    comp_y_displacement[c.cls] = max(comp_y_displacement.get(c.cls, 0.0), abs(cy - comp_start_y[c.cls]))
+
                     # In post-action frames, skip component still inside container
                     if i >= end_frame and container_dets:
                         if any(contain_ratio_aabb(c_bbox, aabb(ct.poly)) >= 0.30 for ct in container_dets):
                             continue
                     iou = iou_aabb(h_bbox, c_bbox)
                     if iou > 0.02:
-                        iou_per_class[c.cls] = iou_per_class.get(c.cls, 0.0) + iou
+                        # For zone_transition (put/return), we weigh IoU by how much the component moved
+                        # Stationary background objects will have near-zero displacement
+                        weight = 1.0
+                        if mode == "zone_transition":
+                            # Bonus for movement, penalty for being static
+                            disp_ratio = comp_y_displacement.get(c.cls, 0.0) / (fh * 0.10) # 10% FH movement is 'full' weight
+                            weight = min(2.0, 0.1 + disp_ratio) 
+                        
+                        iou_per_class[c.cls] = iou_per_class.get(c.cls, 0.0) + (iou * weight)
                         hit_frames_per_class[c.cls] = hit_frames_per_class.get(c.cls, 0) + 1
 
-        # Phase C: select best component that was in container and has sufficient hits
+        # Phase C: select best component that was in container (or eligible by zone transition) and has sufficient hits
         eligible = {
-            cls: iou for cls, iou in iou_per_class.items()
+            cls: score for cls, score in iou_per_class.items()
             if was_in_container.get(cls, False) and hit_frames_per_class.get(cls, 0) >= min_hits
         }
 
@@ -647,10 +796,10 @@ class DynamicSOPBuilder:
 
     def _get_template_for_role(self, role: str) -> ActionTemplate:
         role_map = {
-            "put": ("put_board_into_jig", "put_board"),
+            "put": ("put_board_into_jig", "put_board", "put_component", "put_target"),
             "take": ("take_component", "take_only"),
             "attach": ("attach_component", "attach_only"),
-            "return": ("board_back_to_conveyor", "return_board"),
+            "return": ("board_back_to_conveyor", "return_board", "return_component", "return_target"),
         }
         candidates = role_map.get(role, ())
         for c in candidates:
@@ -684,7 +833,7 @@ class DynamicSOPBuilder:
 
     def _template_role(self, tmpl: ActionTemplate) -> str:
         bid = tmpl.base_id
-        if bid in ("put_board_into_jig", "put_board"):
+        if bid in ("put_board_into_jig", "put_board", "put_target", "put_component"):
             return "put"
         if bid in (
             "take_component_to_target",
@@ -699,7 +848,7 @@ class DynamicSOPBuilder:
             return "attach"
         if bid == APPLY_GASKET_TO_SHIELDING_ACTION_ID:
             return "subtask"
-        if bid in ("board_back_to_conveyor", "return_board"):
+        if bid in ("board_back_to_conveyor", "return_board", "return_target", "return_component"):
             return "return"
         return "other"
 
@@ -1618,6 +1767,26 @@ class DynamicSOPBuilder:
                 pending_take_info.append((take_component_count, comp_name))
                 final_id = f"take_{comp_name}_{take_component_count}"
                 final_count_suffix = str(take_component_count)
+            elif role == "put" and base_id in ("put_board_into_jig", "put_board", "put_target", "put_component"):
+                comp_name = item.get("detected_component") or "board"
+                comp_name = self._sanitize_component_name(comp_name)
+                # Use component-specific counter
+                comp_key = f"put_{comp_name}"
+                repeat_counters[comp_key] = repeat_counters.get(comp_key, 0) + 1
+                c_count = repeat_counters[comp_key]
+                final_id = f"put_{comp_name}_{c_count}" if c_count > 1 else f"put_{comp_name}"
+                if c_count > 1:
+                    final_count_suffix = str(c_count)
+            elif role == "return" and base_id in ("board_back_to_conveyor", "return_board", "return_target", "return_component"):
+                comp_name = item.get("detected_component") or "board"
+                comp_name = self._sanitize_component_name(comp_name)
+                # Use component-specific counter
+                comp_key = f"return_{comp_name}"
+                repeat_counters[comp_key] = repeat_counters.get(comp_key, 0) + 1
+                c_count = repeat_counters[comp_key]
+                final_id = f"return_{comp_name}_{c_count}" if c_count > 1 else f"return_{comp_name}"
+                if c_count > 1:
+                    final_count_suffix = str(c_count)
             elif role == "attach" and base_id in ("attach_component", "attach_only"):
                 if pending_take_info:
                     if len(pending_take_info) == 1:

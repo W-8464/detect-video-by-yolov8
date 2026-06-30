@@ -1,0 +1,333 @@
+global:
+  handoff_prev_end_to_next_start: true
+  class_groups:
+    Component:
+    - PCIe cable
+    - shielding
+    - gasket
+    - heatsink
+    - screw
+    - light pipe
+    - rear panel
+    - label
+    Tool:
+    - tweezers
+    - screw driver
+    - scanner
+    Target:
+    - board
+    - bracket
+    - enclosure
+    - bottom cover
+    Container:
+    - tray
+    _frame_height: 1080
+  class_colors:
+    hand:
+    - 0
+    - 255
+    - 0
+    tray:
+    - 255
+    - 0
+    - 0
+    board:
+    - 0
+    - 0
+    - 255
+    jig:
+    - 255
+    - 255
+    - 0
+    liner:
+    - 0
+    - 255
+    - 255
+    tweezers:
+    - 128
+    - 255
+    - 128
+    shielding:
+    - 255
+    - 128
+    - 0
+    PCIe cable:
+    - 255
+    - 0
+    - 255
+    gasket:
+    - 128
+    - 0
+    - 255
+    bracket:
+    - 0
+    - 128
+    - 255
+    heatsink:
+    - 200
+    - 100
+    - 50
+    screw:
+    - 150
+    - 150
+    - 150
+    screw driver:
+    - 100
+    - 200
+    - 100
+    screw machine:
+    - 100
+    - 100
+    - 200
+    fixture:
+    - 50
+    - 50
+    - 50
+    light pipe:
+    - 255
+    - 150
+    - 150
+    bottom cover:
+    - 150
+    - 255
+    - 150
+    rear panel:
+    - 150
+    - 150
+    - 255
+    enclosure:
+    - 200
+    - 200
+    - 100
+    label:
+    - 100
+    - 200
+    - 200
+    scanner:
+    - 200
+    - 100
+    - 200
+  roi_model_mapping:
+    0: hand
+    1: tweezers
+    2: shielding
+    3: gasket
+    4: label
+  roi_small_classes:
+  - shielding
+  - gasket
+  - label
+  tuning:
+    conf_threshold: 0.55
+    min_match_frames: 10
+    max_window_frames: 300
+    rearm_frames: 5
+    phase_start_wait_frames: 220
+    semantic_lookback_frames: 300
+    attach_anchor_max_gap_frames: 150
+    gasket_attach_max_gap_frames: 220
+    min_take_gasket_span_frames: 25
+    scan_stride: 4
+    roi_pad: 1.6
+    return_role_threshold_offset: 0.1
+    pose:
+      imgsz: 416
+      conf: 0.25
+      iou: 0.5
+      kpts_smooth_alpha: 0.7
+      kpts_display_conf: 0.3
+actions:
+- id: put_board
+  description: 'Nhóm tác vụ độc lập: Đặt board vào jig. Hỗ trợ 2 nhánh: (A) board
+    mới xuất hiện từ ngoài frame, (B) hand mang board từ truyền (1/4 trên) xuống khu
+    vực thao tác (3/4 dưới). Hoàn thành khi board nằm gọn trong jig hoặc đứng yên.'
+  max_action_frames: 0
+  phases:
+  - id: wait_board_appear
+    conditions:
+    - type: or
+      sub_conditions:
+      - type: and
+        sub_conditions:
+        - type: exists
+          subject: Target
+          min_count: 1
+        - type: history_missing
+          subject: Target
+          history_len: 20
+          min_missing_frames: 15
+      - type: and
+        sub_conditions:
+        - type: iou_in_zone
+          subject: hand
+          target: Target
+          zone_y_min_ratio: 0.0
+          zone_y_max_ratio: 0.25
+          target_zone_y_min_ratio: 0.0
+          target_zone_y_max_ratio: 0.25
+          min_thr: 0.05
+    hold_frames: 3
+    grace_miss: 10
+  - id: put_board_in_jig_or_static
+    lock_subject_from_phase0: true
+    conditions:
+    - type: and
+      sub_conditions:
+      - type: exists_in_zone
+        subject: Target
+        zone_y_min_ratio: 0.25
+        zone_y_max_ratio: 1.0
+      - type: or
+        sub_conditions:
+        - type: contain
+          subject: Target
+          target: jig
+          min_thr: 0.9
+        - type: stationary
+          subject: Target
+          history_len: 10
+          min_iou: 0.85
+    hold_frames: 30
+    grace_miss: 30
+  score_rules:
+    verification:
+      component: Target
+      prerequisite: true
+      mode: zone_transition
+      post_frames: 60
+      min_hits: 1
+- id: put_enclosure
+  description: 'Nhóm tác vụ độc lập: Đặt board vào jig. Hỗ trợ 2 nhánh: (A) board
+    mới xuất hiện từ ngoài frame, (B) hand mang board từ truyền (1/4 trên) xuống khu
+    vực thao tác (3/4 dưới). Hoàn thành khi board nằm gọn trong jig hoặc đứng yên.'
+  max_action_frames: 0
+  phases:
+  - id: wait_board_appear
+    conditions:
+    - type: or
+      sub_conditions:
+      - type: and
+        sub_conditions:
+        - type: exists
+          subject: Target
+          min_count: 1
+        - type: history_missing
+          subject: Target
+          history_len: 20
+          min_missing_frames: 15
+      - type: and
+        sub_conditions:
+        - type: iou_in_zone
+          subject: hand
+          target: Target
+          zone_y_min_ratio: 0.0
+          zone_y_max_ratio: 0.25
+          target_zone_y_min_ratio: 0.0
+          target_zone_y_max_ratio: 0.25
+          min_thr: 0.05
+    hold_frames: 3
+    grace_miss: 10
+  - id: put_board_in_jig_or_static
+    lock_subject_from_phase0: true
+    conditions:
+    - type: and
+      sub_conditions:
+      - type: exists_in_zone
+        subject: Target
+        zone_y_min_ratio: 0.25
+        zone_y_max_ratio: 1.0
+      - type: or
+        sub_conditions:
+        - type: contain
+          subject: Target
+          target: jig
+          min_thr: 0.9
+        - type: stationary
+          subject: Target
+          history_len: 10
+          min_iou: 0.85
+    hold_frames: 30
+    grace_miss: 30
+  score_rules:
+    verification:
+      component: Target
+      prerequisite: true
+      mode: zone_transition
+      post_frames: 60
+      min_hits: 1
+- id: return_enclosure
+  description: 'Nhóm tác vụ độc lập: Lấy board đặt lại chuyền. (Chỉ tính giờ từ khi
+    board TỪ TRONG jig bắt đầu bị rút ra). Hỗ trợ camera nhìn thấy truyền: kết thúc
+    khi board rời khỏi khu vực thao tác (3/4 dưới).'
+  max_action_frames: 0
+  timer_start_phase: 1
+  phases:
+  - id: board_stable_in_jig_or_static
+    conditions:
+    - type: or
+      sub_conditions:
+      - type: contain
+        subject: Target
+        target: jig
+        min_thr: 0.9
+      - type: stationary
+        subject: Target
+        history_len: 10
+        min_iou: 0.85
+    hold_frames: 30
+  - id: board_starts_leaving_stable_state
+    conditions:
+    - type: or
+      sub_conditions:
+      - type: not_contain
+        subject: Target
+        target: jig
+        max_thr: 0.88
+      - type: missing
+        subject: Target
+      - type: missing_in_zone
+        subject: Target
+        zone_y_min_ratio: 0.25
+        zone_y_max_ratio: 1.0
+    hold_frames: 15
+    grace_miss: 30
+  - id: board_gone_from_work_area
+    conditions:
+    - type: or
+      sub_conditions:
+      - type: missing
+        subject: Target
+      - type: missing_in_zone
+        subject: Target
+        zone_y_min_ratio: 0.25
+        zone_y_max_ratio: 1.0
+    hold_frames: 4
+    grace_miss: 10
+  score_rules:
+    verification:
+      component: Target
+      prerequisite: true
+      mode: zone_transition
+      post_frames: 60
+      min_hits: 1
+_inference_meta:
+  total_matches: 3
+  matches:
+  - action_id: put_board
+    source_template: put_board.yaml
+    start_frame: 33
+    match_start_frame: 33
+    end_frame: 108
+    confidence: 1.0
+  - action_id: put_enclosure
+    source_template: put_board.yaml
+    start_frame: 109
+    match_start_frame: 109
+    end_frame: 170
+    confidence: 1.0
+  - action_id: return_enclosure
+    source_template: return_board.yaml
+    start_frame: 839
+    match_start_frame: 809
+    end_frame: 935
+    confidence: 1.0
